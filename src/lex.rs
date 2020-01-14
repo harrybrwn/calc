@@ -8,6 +8,8 @@ pub enum Token {
     CloseParen,
     Op(char),
     Num(i64),
+    Int(i64),
+    Float(f64),
     End,
     Invalid,
 }
@@ -16,6 +18,7 @@ pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
 }
 
+#[allow(dead_code)]
 impl<'a> Lexer<'a> {
 
     pub fn new(text: &'a str) -> Self {
@@ -26,11 +29,11 @@ impl<'a> Lexer<'a> {
 
     pub fn peek(&mut self) -> Token {
         let c = loop {
-            let c = *self.chars.peek().unwrap_or(&'\0');
+            let c = self.peek_ch();
             if c != ' ' {
                 break c;
             }
-            self.chars.next();
+            self.next_ch();
         };
 
         match c {
@@ -45,10 +48,10 @@ impl<'a> Lexer<'a> {
             _ => Token::Invalid,
         }
     }
-    #[allow(dead_code)]
+
     pub fn next(&mut self) -> Token {
         let c = loop {
-            let c = self.chars.next().unwrap_or('\0');
+            let c = self.next_ch();
             if c != ' ' {
                 break c;
             }
@@ -69,10 +72,11 @@ impl<'a> Lexer<'a> {
 
     pub fn skip(&mut self) {
         let c = loop {
-            let c = self.chars.next().unwrap_or('\0');
+            let c = self.peek_ch();
             if c != ' ' {
                 break c;
             }
+            self.next_ch();
         };
 
         match c {
@@ -81,15 +85,23 @@ impl<'a> Lexer<'a> {
             '^'  => { self.chars.next(); },
             '0'...'9' => {
                 loop {
-                    let c = *self.chars.peek().unwrap_or(&'\0');
+                    let c = self.peek_ch();
                     if c < '0' || c > '9' {
                         break;
                     }
-                    self.chars.next();
+                    self.next_ch();
                 }
             },
             _ => (),
         }
+    }
+
+    fn peek_ch(&mut self) -> char {
+        *self.chars.peek().unwrap_or(&'\0')
+    }
+
+    fn next_ch(&mut self) -> char {
+        self.chars.next().unwrap_or('\0')
     }
 }
 
@@ -132,7 +144,7 @@ pub fn lex(s: &str) -> Vec<Token> {
 mod tests {
     use super::*;
 
-    #[test]
+    // #[test]
     fn test_lex() {
         let s = "5 + 335 * (1+1)";
         let res = lex(s);
@@ -188,6 +200,26 @@ mod tests {
                 (Token::End, Token::OpenParen) => panic!("should be the same"),
                 _ => {},
             }
+        }
+    }
+
+    #[test]
+    fn test_iter() {
+        println!("\n");
+        let mut l = Lexer::new("1+1");
+        match l.peek() {
+            Token::Num(n) => assert_eq!(n, 1),
+            _ => panic!("expected the number one"),
+        }
+        l.skip();
+        match l.peek() {
+            Token::Op(c) => assert_eq!(c, '+'),
+            _ => panic!("expected '+'"),
+        }
+        l.skip();
+        match l.peek() {
+            Token::Num(n) => assert_eq!(n, 1),
+            _ => panic!("expected number one"),
         }
     }
 }
