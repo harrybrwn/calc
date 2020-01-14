@@ -12,24 +12,12 @@ pub enum Token {
     Invalid,
 }
 
-#[allow(dead_code)]
 pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
 }
 
-fn parse_num<'a>(chars: &mut Peekable<Chars<'a>>, default: i64) -> i64 {
-    let mut num = default;
-    loop {
-        let c = *chars.peek().unwrap_or(&'\0');
-        if c < '0' || c > '9' {
-            break num;
-        }
-        num = (num * 10) + (c as i64 - '0' as i64);
-        chars.next();
-    }
-}
-
 impl<'a> Lexer<'a> {
+
     pub fn new(text: &'a str) -> Self {
         Self{
             chars: text.chars().peekable(),
@@ -57,7 +45,7 @@ impl<'a> Lexer<'a> {
             _ => Token::Invalid,
         }
     }
-
+    #[allow(dead_code)]
     pub fn next(&mut self) -> Token {
         let c = loop {
             let c = self.chars.next().unwrap_or('\0');
@@ -78,8 +66,46 @@ impl<'a> Lexer<'a> {
             _ => Token::Invalid,
         }
     }
+
+    pub fn skip(&mut self) {
+        let c = loop {
+            let c = self.chars.next().unwrap_or('\0');
+            if c != ' ' {
+                break c;
+            }
+        };
+
+        match c {
+            '\0' | ' ' | '(' | ')' |
+            '+'  | '-' | '*' | '/' |
+            '^'  => { self.chars.next(); },
+            '0'...'9' => {
+                loop {
+                    let c = *self.chars.peek().unwrap_or(&'\0');
+                    if c < '0' || c > '9' {
+                        break;
+                    }
+                    self.chars.next();
+                }
+            },
+            _ => (),
+        }
+    }
 }
 
+fn parse_num<'a>(chars: &mut Peekable<Chars<'a>>, default: i64) -> i64 {
+    let mut num = default;
+    loop {
+        let c = *chars.peek().unwrap_or(&'\0');
+        if c < '0' || c > '9' {
+            break num;
+        }
+        num = (num * 10) + (c as i64 - '0' as i64);
+        chars.next();
+    }
+}
+
+#[allow(dead_code)]
 pub fn lex(s: &str) -> Vec<Token> {
     let mut toks = vec![];
     let mut chars = s.chars().peekable();
@@ -92,17 +118,7 @@ pub fn lex(s: &str) -> Vec<Token> {
             '(' => toks.push(Token::OpenParen),
             ')' => toks.push(Token::CloseParen),
             '0'...'9' => {
-                let mut num = 0;
-
-                toks.push(Token::Num(loop {
-                    let c = *chars.peek().unwrap_or(&'\0');
-
-                    if c < '0' || c > '9' {
-                        break num;
-                    }
-                    num = (num * 10) + (c as i64 - '0' as i64);
-                    chars.next();
-                }));
+                toks.push(Token::Num(parse_num(&mut chars, 0)));
                 continue // don't call chars.next
             },
             '-' | '+' | '*' | '/' | '^' => toks.push(Token::Op(*c)),
@@ -157,13 +173,21 @@ mod tests {
         let mut l = Lexer::new(s);
         loop {
             let p = l.peek();
-            println!("{:?}", l.peek());
             let n = l.next();
-            match n {
-                Token::End => break,
-                _ => println!("{:?} {:?}", p, n),
+            match (p, n) {
+                (Token::Num(a), Token::Num(b)) => assert_eq!(a, b),
+                (Token::Op(a), Token::Op(b)) => assert_eq!(a, b),
+                (Token::End, Token::End) => break,
+                (Token::Op(_), Token::Num(_))         |
+                (Token::Num(_), Token::Op(_))         |
+                (Token::OpenParen, Token::CloseParen) |
+                (Token::CloseParen, Token::OpenParen) |
+                (Token::End, Token::Num(_))           |
+                (Token::End, Token::Op(_))            |
+                (Token::End, Token::CloseParen)       |
+                (Token::End, Token::OpenParen) => panic!("should be the same"),
+                _ => {},
             }
-            // assert_eq!(p.unwrap(), n.unwrap());
         }
     }
 }
