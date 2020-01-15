@@ -1,7 +1,6 @@
 use std::iter::Peekable;
 use std::str::Chars;
 
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub enum Token {
     OpenParen,
@@ -17,7 +16,6 @@ pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
 }
 
-#[allow(dead_code)]
 impl<'a> Lexer<'a> {
 
     pub fn new(text: &'a str) -> Self {
@@ -28,14 +26,13 @@ impl<'a> Lexer<'a> {
 
     pub fn peek(&mut self) -> Token {
         let c = self.eat_spaces();
-        println!("{}", c);
+
         match c {
             '\0' => Token::End,
             '(' => Token::OpenParen,
             ')' => Token::CloseParen,
             '0'...'9' => {
                 let mut chrs = self.chars.clone();
-                // Token::Num(parse_num(&mut chrs))
                 lex_num(&mut chrs)
             },
             '-' | '+' | '*' | '/' | '^' => Token::Op(c),
@@ -44,6 +41,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// pass will skip the current token.
+    #[allow(dead_code)]
     pub fn pass(&mut self) {
         match self.eat_spaces() {
             '\0' | ' ' | '(' | ')' |
@@ -92,7 +90,6 @@ impl<'a> Iterator for Lexer<'a> {
             '(' => Some(Token::OpenParen),
             ')' => Some(Token::CloseParen),
             '0'...'9' | '.' => {
-                // return Some(Token::Num(parse_num(&mut self.chars)))
                 return Some(lex_num(&mut self.chars))
             },
             '-' | '+' | '*' | '/' | '^' => Some(Token::Op(c)),
@@ -122,18 +119,6 @@ fn lex_num<'a>(chars: &mut Peekable<Chars<'a>>) -> Token {
         Token::Float(s.parse::<f64>().unwrap())
     } else {
         Token::Int(s.parse::<i64>().unwrap())
-    }
-}
-
-fn parse_num<'a>(chars: &mut Peekable<Chars<'a>>) -> i64 {
-    let mut num = 0i64;
-    loop {
-        let c = *chars.peek().unwrap_or(&'\0');
-        if c < '0' || c > '9' {
-            break num;
-        }
-        num = (c as i64 - '0' as i64) + (num * 10);
-        chars.next();
     }
 }
 
@@ -170,7 +155,7 @@ mod tests {
         let res = lex(s);
         match res[0] {
             Token::Int(x) => assert_eq!(x, 5),
-            _ => panic!("should be a number token"),
+            _ => panic!("should be a int token"),
         }
         match res[1] {
             Token::Op(x) => assert_eq!(x, '+'),
@@ -178,7 +163,7 @@ mod tests {
         }
         match res[2] {
             Token::Int(x) => assert_eq!(x, 335),
-            _ => panic!("should be a number token"),
+            _ => panic!("should be a int token"),
         }
         match res[3] {
             Token::Op(x) => assert_eq!(x, '*'),
@@ -190,7 +175,7 @@ mod tests {
         }
         match res[5] {
             Token::Float(x) => assert_eq!(x, 1.5f64),
-            _ => panic!("should be num"),
+            _ => panic!("should be float"),
         }
         match res[6] {
             Token::Op(c) => assert_eq!(c, '+'),
@@ -239,10 +224,5 @@ mod tests {
             Token::Int(n) => assert_eq!(n, 1),
             _ => panic!("expected number one"),
         }
-    }
-
-    #[test]
-    fn test_pass_on_float() {
-        let mut l = Lexer::new("");
     }
 }
