@@ -2,12 +2,11 @@ use std::iter::Peekable;
 use std::str::Chars;
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Token {
     OpenParen,
     CloseParen,
     Op(char),
-    Num(i64),
     Int(i64),
     Float(f64),
     End,
@@ -28,65 +27,32 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn peek(&mut self) -> Token {
-        let c = loop {
-            let c = self.peek_ch();
-            if c != ' ' {
-                break c;
-            }
-            self.next_ch();
-        };
-
+        let c = self.eat_spaces();
+        println!("{}", c);
         match c {
             '\0' => Token::End,
             '(' => Token::OpenParen,
             ')' => Token::CloseParen,
             '0'...'9' => {
                 let mut chrs = self.chars.clone();
-                Token::Num(parse_num(&mut chrs, 0))
+                // Token::Num(parse_num(&mut chrs))
+                lex_num(&mut chrs)
             },
             '-' | '+' | '*' | '/' | '^' => Token::Op(c),
             _ => Token::Invalid,
         }
     }
 
-    pub fn next(&mut self) -> Token {
-        let c = loop {
-            let c = self.next_ch();
-            if c != ' ' {
-                break c;
-            }
-        };
-
-        match c {
-            '\0' => Token::End,
-            '(' => Token::OpenParen,
-            ')' => Token::CloseParen,
-            '0'...'9' => {
-                let num = c as i64 - '0' as i64;
-                Token::Num(parse_num(&mut self.chars, num))
-            },
-            '-' | '+' | '*' | '/' | '^' => Token::Op(c),
-            _ => Token::Invalid,
-        }
-    }
-
-    pub fn skip(&mut self) {
-        let c = loop {
-            let c = self.peek_ch();
-            if c != ' ' {
-                break c;
-            }
-            self.next_ch();
-        };
-
-        match c {
+    /// pass will skip the current token.
+    pub fn pass(&mut self) {
+        match self.eat_spaces() {
             '\0' | ' ' | '(' | ')' |
             '+'  | '-' | '*' | '/' |
-            '^'  => { self.chars.next(); },
+            '^'  => { self.next_ch(); },
             '0'...'9' => {
                 loop {
                     let c = self.peek_ch();
-                    if c < '0' || c > '9' {
+                    if (c < '0' || c > '9') && c != '.' {
                         break;
                     }
                     self.next_ch();
@@ -103,16 +69,70 @@ impl<'a> Lexer<'a> {
     fn next_ch(&mut self) -> char {
         self.chars.next().unwrap_or('\0')
     }
+
+    fn eat_spaces(&mut self) -> char {
+        loop {
+            let c = self.peek_ch();
+            if c != ' ' {
+                break c
+            }
+            self.next_ch();
+        }
+    }
 }
 
-fn parse_num<'a>(chars: &mut Peekable<Chars<'a>>, default: i64) -> i64 {
-    let mut num = default;
+impl<'a> Iterator for Lexer<'a> {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let c = self.eat_spaces();
+
+        let res = match c {
+            '\0' => None,
+            '(' => Some(Token::OpenParen),
+            ')' => Some(Token::CloseParen),
+            '0'...'9' | '.' => {
+                // return Some(Token::Num(parse_num(&mut self.chars)))
+                return Some(lex_num(&mut self.chars))
+            },
+            '-' | '+' | '*' | '/' | '^' => Some(Token::Op(c)),
+            _ => None,
+        };
+        self.next_ch();
+        res
+    }
+}
+
+fn lex_num<'a>(chars: &mut Peekable<Chars<'a>>) -> Token {
+    let mut s = String::with_capacity(6);
+    let mut isfloat = false;
+
+    loop {
+        let c = *chars.peek().unwrap_or(&'\0');
+        if c == '.' {
+            isfloat = true;
+        } else if c < '0' || c > '9'{
+            break
+        }
+        s.push(c);
+        chars.next();
+    }
+
+    if isfloat {
+        Token::Float(s.parse::<f64>().unwrap())
+    } else {
+        Token::Int(s.parse::<i64>().unwrap())
+    }
+}
+
+fn parse_num<'a>(chars: &mut Peekable<Chars<'a>>) -> i64 {
+    let mut num = 0i64;
     loop {
         let c = *chars.peek().unwrap_or(&'\0');
         if c < '0' || c > '9' {
             break num;
         }
-        num = (num * 10) + (c as i64 - '0' as i64);
+        num = (c as i64 - '0' as i64) + (num * 10);
         chars.next();
     }
 }
@@ -130,7 +150,7 @@ pub fn lex(s: &str) -> Vec<Token> {
             '(' => toks.push(Token::OpenParen),
             ')' => toks.push(Token::CloseParen),
             '0'...'9' => {
-                toks.push(Token::Num(parse_num(&mut chars, 0)));
+                toks.push(lex_num(&mut chars));
                 continue // don't call chars.next
             },
             '-' | '+' | '*' | '/' | '^' => toks.push(Token::Op(*c)),
@@ -144,12 +164,12 @@ pub fn lex(s: &str) -> Vec<Token> {
 mod tests {
     use super::*;
 
-    // #[test]
+    #[test]
     fn test_lex() {
-        let s = "5 + 335 * (1+1)";
+        let s = "5 + 335 * (1.5+1)";
         let res = lex(s);
         match res[0] {
-            Token::Num(x) => assert_eq!(x, 5),
+            Token::Int(x) => assert_eq!(x, 5),
             _ => panic!("should be a number token"),
         }
         match res[1] {
@@ -157,7 +177,7 @@ mod tests {
             _ => panic!("should be an op token"),
         }
         match res[2] {
-            Token::Num(x) => assert_eq!(x, 335),
+            Token::Int(x) => assert_eq!(x, 335),
             _ => panic!("should be a number token"),
         }
         match res[3] {
@@ -169,12 +189,12 @@ mod tests {
             _ => assert!(false),
         }
         match res[5] {
-            Token::Num(x) => assert_eq!(x, 1),
+            Token::Float(x) => assert_eq!(x, 1.5f64),
             _ => panic!("should be num"),
         }
         match res[6] {
             Token::Op(c) => assert_eq!(c, '+'),
-            Token::Num(x) => panic!("should not be number: {}", x),
+            Token::Int(x) => panic!("should not be number: {}", x),
             _ => panic!("should be op"),
         }
         match res[8] {
@@ -185,20 +205,18 @@ mod tests {
         let mut l = Lexer::new(s);
         loop {
             let p = l.peek();
-            let n = l.next();
+            let n = l.next().unwrap_or(Token::End);
+
+            println!("{:?} {:?}", p, n);
             match (p, n) {
-                (Token::Num(a), Token::Num(b)) => assert_eq!(a, b),
-                (Token::Op(a), Token::Op(b)) => assert_eq!(a, b),
-                (Token::End, Token::End) => break,
-                (Token::Op(_), Token::Num(_))         |
-                (Token::Num(_), Token::Op(_))         |
-                (Token::OpenParen, Token::CloseParen) |
-                (Token::CloseParen, Token::OpenParen) |
-                (Token::End, Token::Num(_))           |
-                (Token::End, Token::Op(_))            |
-                (Token::End, Token::CloseParen)       |
-                (Token::End, Token::OpenParen) => panic!("should be the same"),
-                _ => {},
+                (Token::Int(a), Token::Int(b))     => assert_eq!(a, b),
+                (Token::Float(a), Token::Float(b)) => assert_eq!(a, b),
+                (Token::Op(a), Token::Op(b))       => assert_eq!(a, b),
+                (Token::OpenParen, Token::OpenParen) => (),
+                (Token::CloseParen, Token::CloseParen) => (),
+                (Token::End, Token::End)           => break,
+                (Token::Invalid, Token::Invalid)   => panic!("should not be invalid"),
+                _ => panic!("tokens should be the same"),
             }
         }
     }
@@ -208,18 +226,23 @@ mod tests {
         println!("\n");
         let mut l = Lexer::new("1+1");
         match l.peek() {
-            Token::Num(n) => assert_eq!(n, 1),
+            Token::Int(n) => assert_eq!(n, 1),
             _ => panic!("expected the number one"),
         }
-        l.skip();
+        l.pass();
         match l.peek() {
             Token::Op(c) => assert_eq!(c, '+'),
             _ => panic!("expected '+'"),
         }
-        l.skip();
+        l.pass();
         match l.peek() {
-            Token::Num(n) => assert_eq!(n, 1),
+            Token::Int(n) => assert_eq!(n, 1),
             _ => panic!("expected number one"),
         }
+    }
+
+    #[test]
+    fn test_pass_on_float() {
+        let mut l = Lexer::new("");
     }
 }
