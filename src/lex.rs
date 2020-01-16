@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 use std::str::Chars;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     OpenParen,
     CloseParen,
@@ -192,7 +192,7 @@ mod tests {
             let p = l.peek();
             let n = l.next().unwrap_or(Token::End);
 
-            println!("{:?} {:?}", p, n);
+            // println!("{:?} {:?}", p, n);
             match (p, n) {
                 (Token::Int(a), Token::Int(b))     => assert_eq!(a, b),
                 (Token::Float(a), Token::Float(b)) => assert_eq!(a, b),
@@ -208,7 +208,6 @@ mod tests {
 
     #[test]
     fn test_iter() {
-        println!("\n");
         let mut l = Lexer::new("1+1");
         match l.peek() {
             Token::Int(n) => assert_eq!(n, 1),
