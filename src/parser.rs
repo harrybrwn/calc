@@ -29,11 +29,16 @@ pub struct Ast {
 impl fmt::Display for Ast {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let len = self.children.len();
+
         write!(f, "Ast({:?}: [", self.tok)?;
-        for i in 0..(len - 1) {
-            write!(f, "{:?}, ", self.children[i].tok)?;
+        if len > 0 {
+            for i in 0..(len - 1) {
+                write!(f, "{:?}, ", self.children[i].tok)?;
+            }
+            write!(f, "{:?}])", self.children[len - 1].tok)
+        } else {
+            write!(f, "])")
         }
-        write!(f, "{:?}])", self.children[len - 1].tok)
     }
 }
 
@@ -53,41 +58,49 @@ impl Ast {
 }
 
 pub fn parse_expr(stream: &mut Lexer) -> AstRes {
+    println!("parse_expr");
     let head = stream.next().unwrap_or(Token::Invalid);
     let head = match head {
-        Token::Float(..) => Ast::new(head),
-        Token::Int(..) => Ast::new(head),
+        Token::Int(..) | Token::Float(..) => Ast::new(head),
         _ => panic!("dont know what to do"),
     };
 
+    println!("peek: {:?}, head: {}", stream.peek(), head);
     match stream.peek() {
         Token::End => Ok(head),
         Token::Op(c) => match c {
-            '+' | '-' => Ok(Ast::from(
-                stream.next().unwrap(),
-                vec![head, parse_term(stream)?]
-            )),
-            '*' | '/' => Ok(Ast::from(
-                stream.next().unwrap(),
-                vec![head, parse_factor(stream)?]
-            )),
-            _ => Err(String::from("invalid operation")),
+            '+' | '-' => {
+                let op = stream.next().unwrap_or(Token::Invalid);
+                Ok(Ast::from(op, vec![head, parse_term(stream)?]))
+            },
+            '*' | '/' => {
+                let op = stream.next().unwrap_or(Token::Invalid);
+                Ok(Ast::from(op, vec![head, parse_factor(stream)?]))
+            },
+            _ => Err(format!("invalid operation: '{}'", c))
         },
-        _ => parse_factor(stream)
+        _ => parse_term(stream)
     }
 }
 
 pub fn parse_term(stream: &mut Lexer) -> AstRes {
+    println!("parse_term");
     let head = stream.next().unwrap_or(Token::End);
     match head {
         Token::Op(c) => match c {
-            _ => panic!("no compound terms"),
+            _ => panic!("no compound terms yet"),
         },
-        _ => Ok(Ast::from(head, vec![parse_factor(stream)?])),
+        Token::Int(..) | Token::Float(..) => {
+            let op = stream.next().unwrap_or(Token::Invalid);
+            let factor = parse_factor(stream);
+            Ok(Ast::from(op, vec![Ast::new(head), factor?]))
+        },
+        _ => parse_factor(stream),
     }
 }
 
 pub fn parse_factor(stream: &mut Lexer) -> AstRes {
+    println!("parse_factor");
     let head = stream.peek();
 
     match head {
@@ -102,13 +115,14 @@ pub fn parse_factor(stream: &mut Lexer) -> AstRes {
                 stream.pass();
                 Ok(Ast::from(head, vec![parse_factor(stream)?]))
             },
-            _   => Err(String::from("invlaid operation")),
+            // _   => Err(String::from("invlaid operation '{}' (parse_factor)", c)),
+            _ => Err(format!("invlaid operation '{}' (parse_factor)", c)),
         },
         _ => Ok(Ast::new(head)),
     }
 }
 
-fn parse(text: &str) -> AstRes {
+pub fn parse(text: &str) -> AstRes {
     let mut l = Lexer::new(text);
     parse_expr(&mut l)
 }
@@ -117,16 +131,39 @@ fn parse(text: &str) -> AstRes {
 mod tests {
     use super::*;
 
-    #[test]
+    // #[test]
     fn test_parser() {
         let ast = parse("1+1");
+        match ast {
+            Ok(ast) => {
+                assert_eq!(ast.tok, Token::Op('+'));
+                assert_eq!(ast.children[0].tok, Token::Int(1));
+                assert_eq!(ast.children[1].tok, Token::Int(1));
+            },
+            Err(msg) => panic!(msg),
+        }
 
+        let ast = parse("9.4 / 5");
+        match ast {
+            Ok(ast) => {
+                assert_eq!(ast.tok, Token::Op('/'));
+                assert_eq!(ast.children[0].tok, Token::Float(9.4));
+                assert_eq!(ast.children[1].tok, Token::Int(5));
+            },
+            Err(msg) => panic!(msg),
+        }
+    }
+
+    #[test]
+    fn test_complex_str() {
+        let ast = parse("1 + 2 * 3");
         match ast {
             Ok(ast) => {
                 println!("{}", ast);
-                // println!("{:?}", ast.tok);
+                assert_eq!(ast.tok, Token::Op('+'));
             },
             Err(msg) => panic!(msg),
+            // _ => (),
         }
     }
 }
