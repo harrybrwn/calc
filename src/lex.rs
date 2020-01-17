@@ -76,15 +76,17 @@ impl<'a> Lexer<'a> {
         //     _ => Token::Invalid,
         // }
 
-        if self.pos >= self.toks.len() {
-            &Token::End
-        } else {
-            &self.toks[self.pos]
-        }
+        self.look_ahead(0)
     }
 
     pub fn look_ahead(&self, n: usize) -> &Token {
-        &self.toks[self.pos + n]
+        let i = self.pos + n;
+
+        if i >= self.toks.len() {
+            &Token::End
+        } else {
+            &self.toks[i]
+        }
     }
 
     /// pass will skip the current token.
