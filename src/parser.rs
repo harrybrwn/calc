@@ -63,7 +63,7 @@ pub fn parse_expr(stream: &mut Lexer) -> AstRes {
             '*' | '/' => parse_term(stream)?,
             _ => Ast::new(stream.next().unwrap_or(Token::End)),
         },
-        _ => return Err(String::from("invalid expression")),
+        _ => return parse_term(stream),
     };
 
     match stream.peek() {
@@ -94,6 +94,7 @@ pub fn parse_term(stream: &mut Lexer) -> AstRes {
     let op = stream.next().unwrap_or(Token::End);
     match op {
         Token::End => Ok(left),
+        Token::CloseParen => Ok(left),
         _ => Ok(Ast::from(op, vec![left, parse_factor(stream)?])),
     }
 }
@@ -110,8 +111,6 @@ pub fn parse_factor(stream: &mut Lexer) -> AstRes {
         Token::Op(c) => match c {
             '-' => {
                 panic!("not finished with negatives");
-                // stream.pass();
-                // Ok(Ast::from(head, vec![parse_factor(stream)?]))
             },
             _ => Err(format!("invlaid operation '{}' (parse_factor)", c)),
         },
@@ -168,18 +167,58 @@ mod tests {
 
     #[test]
     fn test_another_pemdas() {
-        println!();
         let ast = parse("3 * 2 + 1");
         match ast {
             Ok(ast) => {
-                // println!("{}", ast);
-                // println!("{}, {}", ast.children[0], ast.children[1]);
-
                 assert_eq!(ast.tok, Token::Op('+'));
                 assert_eq!(ast.children[1].tok, Token::Int(1));
                 assert_eq!(ast.children[0].tok, Token::Op('*'));
                 assert_eq!(ast.children[0].children[0].tok, Token::Int(3));
                 assert_eq!(ast.children[0].children[1].tok, Token::Int(2))
+            },
+            Err(msg) => panic!(msg),
+        }
+
+        match parse("3 / 2 + 1") {
+            Ok(ast) => {
+                assert_eq!(ast.tok, Token::Op('+'));
+                assert_eq!(ast.children[0].tok, Token::Op('/'));
+            },
+            Err(msg) => panic!(msg),
+        }
+    }
+
+    #[test]
+    fn test_paren_groups() {
+        println!();
+        match parse("(1+2)") {
+            Ok(ast) => {
+                assert_eq!(ast.tok, Token::Op('+'));
+                assert_eq!(ast.children[0].tok, Token::Int(1));
+                assert_eq!(ast.children[1].tok, Token::Int(2));
+            },
+            Err(msg) => panic!(msg),
+        }
+
+        match parse("4 + (1 - 5)") {
+            Ok(ast) => {
+                assert_eq!(ast.tok, Token::Op('+'));
+                assert_eq!(ast.children[0].tok, Token::Int(4));
+                let ast = &ast.children[1];
+                assert_eq!(ast.tok, Token::Op('-'));
+                assert_eq!(ast.children[0].tok, Token::Int(1));
+                assert_eq!(ast.children[1].tok, Token::Int(5));
+            },
+            Err(msg) => panic!(msg),
+        }
+        match parse("4 * (1 - 5)") {
+            Ok(ast) => {
+                assert_eq!(ast.tok, Token::Op('*'));
+                assert_eq!(ast.children[0].tok, Token::Int(4));
+                let ast = &ast.children[1];
+                assert_eq!(ast.tok, Token::Op('-'));
+                assert_eq!(ast.children[0].tok, Token::Int(1));
+                assert_eq!(ast.children[1].tok, Token::Int(5));
             },
             Err(msg) => panic!(msg),
         }

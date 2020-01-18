@@ -63,19 +63,6 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn peek(&mut self) -> &Token {
-        // let c = self.eat_spaces();
-        // match c {
-        //     '\0' => Token::End,
-        //     '(' => Token::OpenParen,
-        //     ')' => Token::CloseParen,
-        //     '0'...'9' => {
-        //         let mut chrs = self.chars.clone();
-        //         lex_num(&mut chrs)
-        //     },
-        //     '-' | '+' | '*' | '/' | '^' => Token::Op(c),
-        //     _ => Token::Invalid,
-        // }
-
         self.look_ahead(0)
     }
 
