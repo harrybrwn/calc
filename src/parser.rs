@@ -59,7 +59,7 @@ impl Ast {
 
 pub fn parse_expr(stream: &mut Lexer) -> AstRes {
     let head = match stream.look_ahead(1) {
-        &Token::Op(c) => match c {
+        Token::Op(c) => match c {
             '*' | '/' => parse_term(stream)?,
             _ => Ast::new(stream.next().unwrap_or(Token::End)),
         },
@@ -105,7 +105,7 @@ pub fn parse_factor(stream: &mut Lexer) -> AstRes {
     match head {
         Token::Int(..) | Token::Float(..) => Ok(Ast::new(stream.next().unwrap())),
         Token::OpenParen => {
-            stream.pass();
+            stream.next();
             parse_expr(stream)
         },
         Token::Op(c) => match c {

@@ -61,41 +61,16 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn peek(&mut self) -> &Token {
+    pub fn peek(&mut self) -> Token {
         self.look_ahead(0)
     }
 
-    pub fn look_ahead(&self, n: usize) -> &Token {
-        let i = self.pos + n;
-
-        if i >= self.toks.len() {
-            &Token::End
-        } else {
-            &self.toks[i]
+    pub fn look_ahead(&mut self, n: usize) -> Token {
+        let mut chars = self.chars.clone();
+        for _ in 0..n {
+            next_token(&mut chars);
         }
-    }
-
-    /// pass will skip the current token.
-    pub fn pass(&mut self) {
-        self.next();
-    }
-
-    pub fn peek_ch(&mut self) -> char {
-        *self.chars.peek().unwrap_or(&'\0')
-    }
-
-    fn next_ch(&mut self) -> char {
-        self.chars.next().unwrap_or('\0')
-    }
-
-    fn eat_spaces(&mut self) -> char {
-        loop {
-            let c = self.peek_ch();
-            if c != ' ' {
-                break c
-            }
-            self.next_ch();
-        }
+        next_token(&mut chars).unwrap_or(Token::End)
     }
 }
 
@@ -103,19 +78,33 @@ impl<'a> Iterator for Lexer<'a> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let c = self.eat_spaces();
         self.pos += 1;
+        next_token(&mut self.chars)
+    }
+}
 
-        let res = match c {
-            '\0' => None,
-            '(' => Some(Token::OpenParen),
-            ')' => Some(Token::CloseParen),
-            '0'...'9' | '.' => return Some(lex_num(&mut self.chars)),
-            '-' | '+' | '*' | '/' | '^' => Some(Token::Op(c)),
-            _ => None,
-        };
-        self.next_ch();
-        res
+fn next_token(chars: &mut Peekable<Chars>) -> Option<Token> {
+    let c = eat_spaces(chars);
+
+    let res = match c {
+        '\0' => None,
+        '(' => Some(Token::OpenParen),
+        ')' => Some(Token::CloseParen),
+        '0'...'9' | '.' => return Some(lex_num(chars)),
+        '-' | '+' | '*' | '/' | '^' => Some(Token::Op(c)),
+        _ => None,
+    };
+    chars.next();
+    res
+}
+
+fn eat_spaces(chars: &mut Peekable<Chars>) -> char {
+    loop {
+        let c = *chars.peek().unwrap_or(&'\0');
+        if c != ' ' {
+            break c;
+        }
+        chars.next();
     }
 }
 
@@ -146,20 +135,11 @@ pub fn lex(s: &str) -> Vec<Token> {
     let mut chars = s.chars().peekable();
 
     loop {
-        let c = chars.peek().unwrap_or(&'\0');
-
-        match *c {
-            '\0' => break toks,
-            '(' => toks.push(Token::OpenParen),
-            ')' => toks.push(Token::CloseParen),
-            '0'...'9' => {
-                toks.push(lex_num(&mut chars));
-                continue // don't call chars.next
-            },
-            '-' | '+' | '*' | '/' | '^' => toks.push(Token::Op(*c)),
-            _ => (),
+        let next = next_token(&mut chars);
+        match next {
+            Some(tok) => toks.push(tok),
+            None => break toks,
         }
-        chars.next();
     }
 }
 
@@ -228,20 +208,20 @@ mod tests {
         let mut l = Lexer::new("1+1");
         let p = l.peek().clone();
         assert_eq!(p, Token::Int(1));
-        assert_eq!(*l.look_ahead(0), p);
-        assert_eq!(*l.look_ahead(1), Token::Op('+'));
-        assert_eq!(*l.look_ahead(2), Token::Int(1));
+        assert_eq!(l.look_ahead(0), p);
+        assert_eq!(l.look_ahead(1), Token::Op('+'));
+        assert_eq!(l.look_ahead(2), Token::Int(1));
 
         match l.peek().clone() {
             Token::Int(n) => assert_eq!(n, 1),
             _ => panic!("expected the number one"),
         }
-        l.pass();
+        l.next();
         match l.peek().clone() {
             Token::Op(c) => assert_eq!(c, '+'),
             _ => panic!("expected '+'"),
         }
-        l.pass();
+        l.next();
         match l.peek().clone() {
             Token::Int(n) => assert_eq!(n, 1),
             _ => panic!("expected number one"),
@@ -263,6 +243,6 @@ mod tests {
 
     #[test]
     fn test_bad_source() {
-        let l = Lexer::new("hello");
+        // let l = Lexer::new("hello");
     }
 }
