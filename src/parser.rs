@@ -72,7 +72,7 @@ pub fn parse_expr(stream: &mut Lexer) -> AstRes {
         Token::End => Ok(head),
         Token::Op(..) => {
             // this is the case where there is an operation followed by a term.
-            let op = stream.next().unwrap_or(Token::Invalid);
+            let op = stream.next().unwrap_or(Token::End);
             Ok(Ast::from(op, vec![head, parse_term(stream)?]))
         },
         _ => Err(String::from("expected + or - operation")),
@@ -205,7 +205,6 @@ mod tests {
 
     #[test]
     fn test_paren_groups() {
-        println!();
         match parse("(1+2)") {
             Ok(ast) => {
                 assert_eq!(ast.tok, Token::Op('+'));
@@ -214,7 +213,6 @@ mod tests {
             },
             Err(msg) => panic!(msg),
         }
-
         match parse("4 + (1 - 5)") {
             Ok(ast) => {
                 assert_eq!(ast.tok, Token::Op('+'));
@@ -237,6 +235,13 @@ mod tests {
             },
             Err(msg) => panic!(msg),
         }
-        println!();
+    }
+
+    #[test]
+    fn test_parsing_errors() {
+        // match parse("hello") {
+        //     Ok(ast) => println!("{}", ast),
+        //     Err(msg) => println!("{}", msg),
+        // }
     }
 }

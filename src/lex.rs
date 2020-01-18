@@ -43,7 +43,6 @@ pub enum Token {
     Int(i64),
     Float(f64),
     End,
-    Invalid,
 }
 
 pub struct Lexer<'a> {
@@ -219,7 +218,6 @@ mod tests {
                 (Token::OpenParen, Token::OpenParen) => (),
                 (Token::CloseParen, Token::CloseParen) => (),
                 (Token::End, Token::End)           => break,
-                (Token::Invalid, Token::Invalid)   => panic!("should not be invalid"),
                 _ => panic!("tokens should be the same"),
             }
         }
@@ -261,5 +259,10 @@ mod tests {
         let toks2 = lex(s);
 
         assert_eq!(toks1, toks2);
+    }
+
+    #[test]
+    fn test_bad_source() {
+        let l = Lexer::new("hello");
     }
 }
