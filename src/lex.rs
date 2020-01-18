@@ -31,6 +31,10 @@ fn get_op(c: char) -> Op {
         '-' => Op::Sub,
         '*' => Op::Mul,
         '/' => Op::Div,
+
+        // these are not supported yet
+        '^' => Op::Invalid,
+        '!' => Op::Invalid,
         _ => Op::Invalid,
     }
 }
@@ -47,8 +51,6 @@ pub enum Token {
 
 pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
-    toks: Vec<Token>,
-    pos: usize,
 }
 
 impl<'a> Lexer<'a> {
@@ -56,13 +58,11 @@ impl<'a> Lexer<'a> {
     pub fn new(text: &'a str) -> Self {
         Self{
             chars: text.chars().peekable(),
-            toks: lex(text),
-            pos: 0usize,
         }
     }
 
     pub fn peek(&mut self) -> Token {
-        self.look_ahead(0)
+        next_token(&mut self.chars.clone())
     }
 
     pub fn look_ahead(&mut self, n: usize) -> Token {
@@ -70,7 +70,7 @@ impl<'a> Lexer<'a> {
         for _ in 0..n {
             next_token(&mut chars);
         }
-        next_token(&mut chars).unwrap_or(Token::End)
+        next_token(&mut chars)
     }
 }
 
@@ -78,21 +78,24 @@ impl<'a> Iterator for Lexer<'a> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.pos += 1;
-        next_token(&mut self.chars)
+        let tok = next_token(&mut self.chars);
+        match tok {
+            Token::End => None,
+            _ => Some(tok),
+        }
     }
 }
 
-fn next_token(chars: &mut Peekable<Chars>) -> Option<Token> {
+fn next_token(chars: &mut Peekable<Chars>) -> Token {
     let c = eat_spaces(chars);
 
     let res = match c {
-        '\0' => None,
-        '(' => Some(Token::OpenParen),
-        ')' => Some(Token::CloseParen),
-        '0'...'9' | '.' => return Some(lex_num(chars)),
-        '-' | '+' | '*' | '/' | '^' => Some(Token::Op(c)),
-        _ => None,
+        '(' => Token::OpenParen,
+        ')' => Token::CloseParen,
+        '0'...'9' | '.' => return lex_num(chars),
+        '-' | '+' | '*' | '/' | '^' => Token::Op(c),
+        '\0' => Token::End,
+        _ => Token::End,
     };
     chars.next();
     res
@@ -137,8 +140,8 @@ pub fn lex(s: &str) -> Vec<Token> {
     loop {
         let next = next_token(&mut chars);
         match next {
-            Some(tok) => toks.push(tok),
-            None => break toks,
+            Token::End => break toks,
+            _ => toks.push(next),
         }
     }
 }

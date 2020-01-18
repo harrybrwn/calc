@@ -1,10 +1,7 @@
 use std::io::{self, Error, Write, ErrorKind};
 use std::env;
 
-pub mod parser;
-pub mod lex;
-use parser::{parse, eval};
-
+use calc::parser::{parse, eval};
 
 fn interpreter() -> Result<(), Error> {
     let stdin = io::stdin();
