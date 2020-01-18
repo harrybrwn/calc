@@ -138,3 +138,11 @@ fn test_complex_expr() {
         Err(..) => (),
     }
 }
+
+#[test]
+fn test_eval() {
+    // match parse("-(1 + 1)") {
+    //     Ok(ast) => assert_eq!(eval(&ast), -2.0),
+    //     Err(msg) => panic!(msg),
+    // }
+}

@@ -24,7 +24,7 @@ fn interpreter() -> Result<(), Error> {
     }
 }
 
-fn main() -> Result<(), Error>{
+fn main() -> Result<(), Error> {
     let args = env::args();
 
     if args.len() >= 2 {

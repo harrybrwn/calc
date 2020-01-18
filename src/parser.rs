@@ -30,7 +30,11 @@ pub fn eval(ast: &Ast) -> f64 {
     match ast.tok {
         Token::Op(c) => match c {
             '+' => eval(&ast.children[0]) + eval(&ast.children[1]),
-            '-' => eval(&ast.children[0]) - eval(&ast.children[1]),
+            '-' => if ast.children.len() == 1 {
+                -1.0 * eval(&ast.children[0])
+            } else {
+                eval(&ast.children[0]) - eval(&ast.children[1])
+            },
             '*' => eval(&ast.children[0]) * eval(&ast.children[1]),
             '/' => eval(&ast.children[0]) / eval(&ast.children[1]),
             _ => panic!("invalid op"),
@@ -76,7 +80,7 @@ fn parse_expr(stream: &mut Lexer) -> AstRes {
     let head = match stream.look_ahead(1) {
         Token::Op(c) => match c {
             '*' | '/' => parse_term(stream)?,
-            _ => Ast::new(stream.next().unwrap_or(Token::End)),
+            _ => Ast::new(stream.next().unwrap()),
         },
         // this is the case where there is only a term,
         // no op followed by a term.
@@ -86,8 +90,9 @@ fn parse_expr(stream: &mut Lexer) -> AstRes {
     match stream.peek() {
         Token::End => Ok(head),
         Token::Op(..) => {
-            // this is the case where there is an operation followed by a term.
-            let op = stream.next().unwrap_or(Token::End);
+            // this is the case where there is an operation
+            // followed by a term.
+            let op = stream.next().unwrap();
             let term = parse_term(stream)?;
             Ok(Ast::from(op, vec![head, term]))
         },
@@ -97,11 +102,12 @@ fn parse_expr(stream: &mut Lexer) -> AstRes {
 
 fn parse_term(stream: &mut Lexer) -> AstRes {
     let head = match stream.look_ahead(1) {
+        // we have reched the end of an expression, must return
         Token::CloseParen => return Ok(
-            Ast::new(stream.next().unwrap_or(Token::End))
+            Ast::new(stream.next().unwrap())
         ),
         Token::Op(c) => match c {
-            '*' | '/' => Ast::new(stream.next().unwrap_or(Token::End)),
+            '*' | '/' => Ast::new(stream.next().unwrap()),
             _ => return parse_factor(stream),
         },
         _ => parse_factor(stream)?,
@@ -117,26 +123,25 @@ fn parse_term(stream: &mut Lexer) -> AstRes {
 }
 
 fn parse_factor(stream: &mut Lexer) -> AstRes {
-    let head = stream.peek();
+    let head = stream.next().unwrap_or(Token::End);
 
     match head {
-        Token::Int(..) | Token::Float(..) => Ok(Ast::new(stream.next().unwrap())),
+        Token::Int(..) | Token::Float(..) => Ok(
+            Ast::new(head)
+        ),
         Token::OpenParen => {
-            stream.next();
-            let res = parse_expr(stream);
+            let expr = parse_expr(stream);
 
             match stream.next().unwrap_or(Token::End) {
-                Token::CloseParen => res,
+                Token::CloseParen => expr,
                 _ => Err(String::from("expected ')'")),
             }
         },
         Token::Op(c) => match c {
-            '-' => {
-                panic!("not finished with negatives");
-            },
-            _ => Err(format!("invlaid operation '{}' (parse_factor)", c)),
+            '-' => panic!("not finished with negatives"),
+            _ => Err(format!("invlaid operation '{}'", c)),
         },
-        _ => Ok(Ast::new(stream.next().unwrap_or(Token::End))),
+        _ => Ok(Ast::new(head)),
     }
 }
 
