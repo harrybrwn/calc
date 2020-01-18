@@ -26,6 +26,23 @@ pub struct Ast {
     pub children: Vec<Ast>,
 }
 
+pub fn eval(ast: &Ast) -> f64 {
+    match ast.tok {
+        Token::Op(c) => match c {
+            '+' => eval(&ast.children[0]) + eval(&ast.children[1]),
+            '-' => eval(&ast.children[0]) - eval(&ast.children[1]),
+            '*' => eval(&ast.children[0]) * eval(&ast.children[1]),
+            '/' => {
+                eval(&ast.children[0]) as f64 / eval(&ast.children[1]) as f64
+            },
+            _ => panic!("invalid op"),
+        },
+        Token::Int(n) => n as f64,
+        Token::Float(n) => n,
+        _ => 0.0,
+    }
+}
+
 impl fmt::Display for Ast {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let len = self.children.len();
@@ -57,7 +74,7 @@ impl Ast {
     }
 }
 
-pub fn parse_expr(stream: &mut Lexer) -> AstRes {
+fn parse_expr(stream: &mut Lexer) -> AstRes {
     let head = match stream.look_ahead(1) {
         Token::Op(c) => match c {
             '*' | '/' => parse_term(stream)?,
@@ -65,7 +82,7 @@ pub fn parse_expr(stream: &mut Lexer) -> AstRes {
         },
         // this is the case where there is only a term,
         // no op followed by a term.
-        _ => return parse_term(stream),
+        _ => parse_term(stream)?,
     };
 
     match stream.peek() {
@@ -73,40 +90,47 @@ pub fn parse_expr(stream: &mut Lexer) -> AstRes {
         Token::Op(..) => {
             // this is the case where there is an operation followed by a term.
             let op = stream.next().unwrap_or(Token::End);
-            Ok(Ast::from(op, vec![head, parse_term(stream)?]))
+            let term = parse_term(stream)?;
+            Ok(Ast::from(op, vec![head, term]))
         },
         _ => Err(String::from("expected + or - operation")),
     }
 }
 
-pub fn parse_term(stream: &mut Lexer) -> AstRes {
-    let head = stream.next().unwrap_or(Token::End);
-
-    let left = match head {
-        Token::Op(c) => {
-            println!("term op: {}", c);
-            panic!("aaaaahhhhhh");
+fn parse_term(stream: &mut Lexer) -> AstRes {
+    let head = match stream.look_ahead(1) {
+        Token::CloseParen => return Ok(
+            Ast::new(stream.next().unwrap_or(Token::End))
+        ),
+        Token::Op(c) => match c {
+            '*' | '/' => Ast::new(stream.next().unwrap_or(Token::End)),
+            _ => return parse_factor(stream),
         },
-        Token::Int(..) | Token::Float(..) => Ast::new(head),
-        _ => parse_term(stream)?,
+        _ => parse_factor(stream)?,
     };
 
-    let op = stream.next().unwrap_or(Token::End);
-    match op {
-        Token::End => Ok(left),
-        Token::CloseParen => Ok(left),
-        _ => Ok(Ast::from(op, vec![left, parse_factor(stream)?])),
+    match stream.peek() {
+        Token::End => Ok(head),
+        _ => Ok(Ast::from(
+            stream.next().unwrap_or(Token::End),
+            vec![head, parse_factor(stream)?]
+        )),
     }
 }
 
-pub fn parse_factor(stream: &mut Lexer) -> AstRes {
+fn parse_factor(stream: &mut Lexer) -> AstRes {
     let head = stream.peek();
 
     match head {
         Token::Int(..) | Token::Float(..) => Ok(Ast::new(stream.next().unwrap())),
         Token::OpenParen => {
             stream.next();
-            parse_expr(stream)
+            let res = parse_expr(stream);
+
+            match stream.next().unwrap_or(Token::End) {
+                Token::CloseParen => res,
+                _ => Err(String::from("expected ')'")),
+            }
         },
         Token::Op(c) => match c {
             '-' => {
@@ -114,7 +138,7 @@ pub fn parse_factor(stream: &mut Lexer) -> AstRes {
             },
             _ => Err(format!("invlaid operation '{}' (parse_factor)", c)),
         },
-        _ => Ok(Ast::new(head.clone())),
+        _ => Ok(Ast::new(stream.next().unwrap_or(Token::End))),
     }
 }
 
@@ -238,10 +262,30 @@ mod tests {
     }
 
     #[test]
-    fn test_parsing_errors() {
-        // match parse("hello") {
-        //     Ok(ast) => println!("{}", ast),
-        //     Err(msg) => println!("{}", msg),
-        // }
+    fn test_complex_expr() {
+        match parse("(1+4*5)") {
+            Ok(ast) => assert_eq!(ast.tok, Token::Op('+')),
+            Err(msg) => panic!(msg),
+        }
+
+        match parse("(1+4*5)-5") {
+            Ok(ast) => {
+                assert_eq!(eval(&ast), ( (1+4*5)-5 ) as f64);
+
+                assert_eq!(ast.tok, Token::Op('-'));
+                assert_eq!(ast.children[1].tok, Token::Int(5));
+                let ast = &ast.children[0];
+                assert_eq!(ast.tok, Token::Op('+'));
+                assert_eq!(ast.children[0].tok, Token::Int(1));
+                assert_eq!(ast.children[1].children[0].tok, Token::Int(4));
+                assert_eq!(ast.children[1].children[1].tok, Token::Int(5));
+            },
+            Err(msg) => panic!(msg),
+        }
+
+        match parse("5-(1+4*5") {
+            Ok(..) => panic!("expected an error here"),
+            Err(..) => (),
+        }
     }
 }

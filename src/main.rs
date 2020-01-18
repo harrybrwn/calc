@@ -3,26 +3,8 @@ use std::env;
 
 pub mod parser;
 pub mod lex;
-use lex::Token;
-use parser::{Ast, parse};
+use parser::{parse, eval};
 
-
-fn eval(ast: &Ast) -> f64 {
-    match ast.tok {
-        Token::Op(c) => match c {
-            '+' => eval(&ast.children[0]) + eval(&ast.children[1]),
-            '-' => eval(&ast.children[0]) - eval(&ast.children[1]),
-            '*' => eval(&ast.children[0]) * eval(&ast.children[1]),
-            '/' => {
-                eval(&ast.children[0]) as f64 / eval(&ast.children[1]) as f64
-            },
-            _ => panic!("invalid op"),
-        },
-        Token::Int(n) => n as f64,
-        Token::Float(n) => n,
-        _ => 0.0,
-    }
-}
 
 fn interpreter() -> Result<(), Error> {
     let stdin = io::stdin();
