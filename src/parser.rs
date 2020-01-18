@@ -63,17 +63,17 @@ pub fn parse_expr(stream: &mut Lexer) -> AstRes {
             '*' | '/' => parse_term(stream)?,
             _ => Ast::new(stream.next().unwrap_or(Token::End)),
         },
+        // this is the case where there is only a term,
+        // no op followed by a term.
         _ => return parse_term(stream),
     };
 
     match stream.peek() {
         Token::End => Ok(head),
-        Token::Op(c) => match c {
-            '+' | '-' => {
-                let op = stream.next().unwrap_or(Token::Invalid);
-                Ok(Ast::from(op, vec![head, parse_term(stream)?]))
-            },
-            _ => Err(format!("invalid operation: '{}'", c))
+        Token::Op(..) => {
+            // this is the case where there is an operation followed by a term.
+            let op = stream.next().unwrap_or(Token::Invalid);
+            Ok(Ast::from(op, vec![head, parse_term(stream)?]))
         },
         _ => Err(String::from("expected + or - operation")),
     }
@@ -100,7 +100,7 @@ pub fn parse_term(stream: &mut Lexer) -> AstRes {
 }
 
 pub fn parse_factor(stream: &mut Lexer) -> AstRes {
-    let head = stream.peek().clone();
+    let head = stream.peek();
 
     match head {
         Token::Int(..) | Token::Float(..) => Ok(Ast::new(stream.next().unwrap())),
@@ -114,7 +114,7 @@ pub fn parse_factor(stream: &mut Lexer) -> AstRes {
             },
             _ => Err(format!("invlaid operation '{}' (parse_factor)", c)),
         },
-        _ => Ok(Ast::new(head)),
+        _ => Ok(Ast::new(head.clone())),
     }
 }
 
@@ -183,6 +183,21 @@ mod tests {
             Ok(ast) => {
                 assert_eq!(ast.tok, Token::Op('+'));
                 assert_eq!(ast.children[0].tok, Token::Op('/'));
+            },
+            Err(msg) => panic!(msg),
+        }
+    }
+
+    #[test]
+    fn test_nested_div() {
+        match parse("3/2/4") {
+            Ok(ast) => {
+                assert_eq!(ast.tok, Token::Op('/'));
+                assert_eq!(ast.children[1].tok, Token::Int(4));
+                let ast = &ast.children[0];
+                assert_eq!(ast.tok, Token::Op('/'));
+                assert_eq!(ast.children[0].tok, Token::Int(3));
+                assert_eq!(ast.children[1].tok, Token::Int(2));
             },
             Err(msg) => panic!(msg),
         }
