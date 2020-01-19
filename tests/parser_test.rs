@@ -140,6 +140,18 @@ fn test_complex_expr() {
 }
 
 #[test]
+fn test_multi_mul() {
+    match parse("1*2*3+1") {
+        Ok(ast) => {
+            println!("{}", ast);
+            println!("{} {}", ast.children[0], ast.children[1]);
+            assert_eq!(ast.tok, Token::Op('+'));
+        },
+        Err(msg) => panic!(msg),
+    }
+}
+
+#[test]
 fn test_eval() {
     assert_eq!(eval(&parse("-(1 + 1)").unwrap()), -2.0);
     assert_eq!(eval(&parse("-5").unwrap()), -5.0);
@@ -147,14 +159,25 @@ fn test_eval() {
     assert_eq!(eval(&parse("4/(3-1)*5").unwrap()), ( 4/(3-1)*5 ) as f64);
     assert_eq!(eval(&parse("(3-1)*5+1").unwrap()), ( (3-1)*5+1 ) as f64);
 
-    assert_eq!(eval(&parse("1*1*1 + 1").unwrap()), ( 1*1*1 + 1 ) as f64);
-
-    let testcase = "4 / (3 - 1) * 5 + 1";
-    assert_eq!(eval(&parse(testcase).unwrap()), ( 4 / (3 - 1) * 5 + 1 ) as f64);
+    let testcase = "1*1*1 + 1";
+    assert_eq!(eval(&parse(testcase).unwrap()), ( 1*1*1 + 1 ) as f64);
+    assert_eq!(parse(testcase).unwrap().tok, Token::Op('+'));
     match parse(testcase) {
         Ok(ast) => {
             println!("{}", ast);
-            println!("eval: {}, want: {}", eval(&ast), 4 / (3 - 1) * 5 + 1);
+            println!("{} {}", ast.children[0], ast.children[1]);
+            println!("eval: {}, want: {}", eval(&ast), 1*1*1 + 1);
+        },
+        Err(msg) => panic!(msg),
+    }
+
+    let testcase = "4/(3-1)*5+1";
+    assert_eq!(eval(&parse(testcase).unwrap()), ( 4 / (3 - 1) * 5 + 1 ) as f64);
+    assert_eq!(parse(testcase).unwrap().tok, Token::Op('+'));
+    match parse(testcase) {
+        Ok(ast) => {
+            println!("{}", ast);
+            println!("eval: {}, want: {}", eval(&ast), 4/(3-1)*5+1);
         },
         Err(msg) => panic!(msg),
     }
