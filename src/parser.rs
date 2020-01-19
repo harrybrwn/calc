@@ -138,7 +138,7 @@ fn parse_factor(stream: &mut Lexer) -> AstRes {
             }
         },
         Token::Op(c) => match c {
-            '-' => panic!("not finished with negatives"),
+            '-' => Ok(Ast::from(head, vec![parse_factor(stream)?])),
             _ => Err(format!("invlaid operation '{}'", c)),
         },
         _ => Ok(Ast::new(head)),

@@ -141,8 +141,21 @@ fn test_complex_expr() {
 
 #[test]
 fn test_eval() {
-    // match parse("-(1 + 1)") {
-    //     Ok(ast) => assert_eq!(eval(&ast), -2.0),
-    //     Err(msg) => panic!(msg),
-    // }
+    assert_eq!(eval(&parse("-(1 + 1)").unwrap()), -2.0);
+    assert_eq!(eval(&parse("-5").unwrap()), -5.0);
+    assert_eq!(eval(&parse("(1+4*5)-5").unwrap()), ( (1+4*5)-5 ) as f64);
+    assert_eq!(eval(&parse("4/(3-1)*5").unwrap()), ( 4/(3-1)*5 ) as f64);
+    assert_eq!(eval(&parse("(3-1)*5+1").unwrap()), ( (3-1)*5+1 ) as f64);
+
+    assert_eq!(eval(&parse("1*1*1 + 1").unwrap()), ( 1*1*1 + 1 ) as f64);
+
+    let testcase = "4 / (3 - 1) * 5 + 1";
+    assert_eq!(eval(&parse(testcase).unwrap()), ( 4 / (3 - 1) * 5 + 1 ) as f64);
+    match parse(testcase) {
+        Ok(ast) => {
+            println!("{}", ast);
+            println!("eval: {}, want: {}", eval(&ast), 4 / (3 - 1) * 5 + 1);
+        },
+        Err(msg) => panic!(msg),
+    }
 }
