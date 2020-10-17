@@ -39,7 +39,7 @@ fn get_op(c: char) -> Op {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Token {
     OpenParen,
     CloseParen,
@@ -65,7 +65,7 @@ impl<'a> Lexer<'a> {
         next_token(&mut self.chars.clone())
     }
 
-    pub fn look_ahead(&mut self, n: usize) -> Token {
+    pub fn look_ahead(&self, n: usize) -> Token {
         let mut chars = self.chars.clone();
         for _ in 0..n {
             next_token(&mut chars);
@@ -86,13 +86,19 @@ impl<'a> Iterator for Lexer<'a> {
     }
 }
 
+impl<'a> fmt::Display for Lexer<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Lexer")
+    }
+}
+
 fn next_token(chars: &mut Peekable<Chars>) -> Token {
     let c = eat_spaces(chars);
 
     let res = match c {
         '(' => Token::OpenParen,
         ')' => Token::CloseParen,
-        '0'...'9' | '.' => return lex_num(chars),
+        '0'..='9' | '.' => return lex_num(chars),
         '-' | '+' | '*' | '/' | '^' => Token::Op(c),
         '\0' => Token::End,
         _ => Token::End,

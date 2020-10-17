@@ -7,20 +7,21 @@ fn interpreter() -> Result<(), Error> {
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
+    let mut s = String::new();
     loop {
-        let mut s = String::new();
         print!(">>> ");
 
         stdout.flush()?;
         stdin.read_line(&mut s)?;
 
-        if s.as_bytes()[0] as char == 'q' {
+        if s.as_bytes()[0] as char == 'q' || s == "q" || s == "quit" || s == "exit" {
             return Ok(());
         }
         match parse(s.as_str()) {
             Ok(ast) => println!("{}", eval(&ast)),
             Err(msg) => println!("Error: {}", msg),
         }
+        s.clear()
     }
 }
 

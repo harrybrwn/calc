@@ -1,6 +1,6 @@
 [package]
 name = "calc"
-version = "0.0.0"
+version = "0.1.0"
 authors = ["Harry Brown <harrybrown98@gmail.com>"]
 edition = "2018"
 

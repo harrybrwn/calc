@@ -8,7 +8,7 @@ use crate::lex::Token;
 type AstRes = Result<Ast, String>;
 
 /*
-Grammar:
+Grammar: (see http://www.allisons.org/ll/ProgLang/Grammar/Top-Down/)
 
 expr   ::= expr + term |
            expr - term |
@@ -61,6 +61,15 @@ impl fmt::Display for Ast {
     }
 }
 
+impl Clone for Ast {
+    fn clone(&self) -> Self {
+        Self{
+            tok: self.tok,
+            children: self.children.clone(),
+        }
+    }
+}
+
 impl Ast {
     pub fn new(t: Token) -> Self {
         Self{
@@ -74,27 +83,46 @@ impl Ast {
         ast.children = children;
         ast
     }
+
+    pub fn push(&mut self, ast: Ast) {
+        self.children.push(ast)
+    }
 }
 
 fn parse_expr(stream: &mut Lexer) -> AstRes {
     let head = match stream.look_ahead(1) {
-        Token::Op(c) => match c {
-            '*' | '/' => parse_term(stream)?,
-            _ => Ast::new(stream.next().unwrap()),
-        },
+        Token::End => Ast::new(stream.next().unwrap()),
         // this is the case where there is only a term,
         // no op followed by a term.
         _ => parse_term(stream)?,
     };
 
-    match stream.peek() {
+    let op = stream.next().unwrap_or(Token::End);
+    match op {
         Token::End => Ok(head),
-        Token::Op(..) => {
-            // this is the case where there is an operation
-            // followed by a term.
-            let op = stream.next().unwrap();
-            let term = parse_term(stream)?;
-            Ok(Ast::from(op, vec![head, term]))
+        // this is the case where there is an operation
+        // followed by a term.
+        Token::Op(c) => match c {
+            '/' => {
+                let term = parse_term(stream)?;
+                match term.tok {
+                    Token::Op(inner) => Ok(
+                        Ast::from(op, vec![
+                            Ast::from(Token::Op(inner), vec![
+                                head,
+                                term.children[0].clone()
+                            ]),
+                            term.children[1].clone(),
+                        ])
+                    ),
+                    _ => Ok(Ast::from(op, vec![head, term])),
+                }
+            },
+            '*' | '+' | '-' => {
+                let term = parse_term(stream)?;
+                Ok(Ast::from(op, vec![head, term]))
+            },
+            _ => panic!("i dont know what to do with this"),
         },
         _ => Err(String::from("expected + or - operation")),
     }
@@ -131,12 +159,12 @@ fn parse_factor(stream: &mut Lexer) -> AstRes {
         ),
         Token::OpenParen => {
             let expr = parse_expr(stream);
-
             match stream.next().unwrap_or(Token::End) {
                 Token::CloseParen => expr,
                 _ => Err(String::from("expected ')'")),
             }
         },
+        // only for negatives
         Token::Op(c) => match c {
             '-' => Ok(Ast::from(head, vec![parse_factor(stream)?])),
             _ => Err(format!("invlaid operation '{}'", c)),
@@ -145,7 +173,16 @@ fn parse_factor(stream: &mut Lexer) -> AstRes {
     }
 }
 
+/// Parse a raw string and return the abstract syntax tree.
+///
+/// # Examples
+///
+/// ```
+/// let ast = parse("2 + (4 * 3 / 2)");
+/// let result = eval(&ast);
+/// ```
 pub fn parse(text: &str) -> AstRes {
     let mut l = Lexer::new(text);
-    parse_expr(&mut l)
+    let res = parse_expr(&mut l);
+    res
 }

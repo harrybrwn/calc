@@ -93,8 +93,3 @@ fn test_both_lexers() {
 
     assert_eq!(toks1, toks2);
 }
-
-#[test]
-fn test_bad_source() {
-    // let l = Lexer::new("hello");
-}
