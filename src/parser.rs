@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::ast::Ast;
-use crate::lex::Token;
+use crate::lex::{Lexer, Token};
 
 type AstRes = Result<Ast, String>;
 
@@ -10,12 +10,17 @@ type AstRes = Result<Ast, String>;
 /// # Examples
 ///
 /// ```
-/// // let ast = parse("2 + (4 * 3 / 2)");
-/// // let result = eval(&ast);
+/// use calc;
+///
+/// let ast = match calc::parser::parse("2 + (4 * 3 / 2)") {
+///     Ok(ast) => ast,
+///     Err(msg) => panic!(msg),
+/// };
+/// let result = calc::ast::eval(&ast);
 /// ```
 pub fn parse(text: &str) -> AstRes {
-    // let mut l = Lexer::new(text);
-    Err(format!("no implemented {}", text))
+    let l = Lexer::new(text);
+    expr(&mut l.as_vec())
 }
 
 /*
@@ -141,19 +146,16 @@ fn until_oneof<'a>(tokens: &'a mut Vec<Token>, delim: &[Token]) -> Vec<Token> {
 
 #[cfg(test)]
 mod test {
-    // use super::{parse, parse_expr, parse_factor};
-    use super::factor;
-    use super::term;
-    use crate::ast::eval;
-    use crate::ast::Ast;
+    use super::{expr, factor, parse, term, until_oneof};
+    use crate::ast::{eval, Ast};
     use crate::lex::{Lexer, Token};
-    use crate::parser::expr;
-    use crate::parser::until_oneof;
 
     #[test]
     fn test_factor() {
-        for s in vec!["1", "(1)", "((1))"] {
-            match factor(&mut Lexer::new(s).as_vec()) {
+        // none of these should parse farther than the first number
+        for s in vec!["1", "(1)", "((1))", "1*1", "1/1", "1+1", "1-1"] {
+            let t = Lexer::new(s);
+            match factor(&mut t.as_vec()) {
                 Ok(ast) => {
                     assert_eq!(ast.tok, Token::Int(1));
                     assert_eq!(ast.children.len(), 0);
@@ -161,28 +163,14 @@ mod test {
                 Err(msg) => panic!(msg),
             }
         }
-        let mut t = Lexer::new("1*1").as_vec();
-        match factor(&mut t) {
-            Ok(ast) => {
-                assert_eq!(ast.tok, Token::Int(1));
-            }
-            Err(msg) => panic!(msg),
-        }
-        match factor(&mut t) {
-            Err(..) => {}
-            Ok(..) => panic!("expected an error"),
-        }
     }
 
     #[test]
     fn test_term() {
         match term(&mut Lexer::new("(1)").as_vec()) {
-            Ok(ast) => {
-                assert_eq!(ast.tok, Token::Int(1));
-            }
+            Ok(ast) => assert_eq!(ast.tok, Token::Int(1)),
             Err(msg) => panic!(msg),
         }
-
         match term(&mut Lexer::new("1*1").as_vec()) {
             Ok(ast) => {
                 assert_eq!(ast.tok, Token::Op('*'));
@@ -220,6 +208,28 @@ mod test {
                     assert_eq!(ast.children[0].children[1].tok, Token::Int(2));
                     assert_eq!(ast.children[1].tok, Token::Int(3));
                     assert_eq!(eval(&ast), (1.0 / 2.0 / 3.0));
+                }
+                Err(msg) => panic!(msg),
+            }
+        }
+        for s in vec![
+            "1*2*3",
+            "1*2*(3)",
+            "(1)*2*3",
+            "1*(2*3)",
+            "1*(2)*3",
+            "((1)*(2*3))",
+            "(((1*2*3)))",
+            "((((1*(2*3)))))",
+        ] {
+            match term(&mut Lexer::new(s).as_vec()) {
+                Ok(ast) => {
+                    assert_eq!(ast.tok, Token::Op('*'));
+                    assert_eq!(ast.children[0].tok, Token::Int(1));
+                    assert_eq!(ast.children[1].tok, Token::Op('*'));
+                    assert_eq!(ast.children[1].children[0].tok, Token::Int(2));
+                    assert_eq!(ast.children[1].children[1].tok, Token::Int(3));
+                    assert_eq!(eval(&ast), (1.0 * 2.0 * 3.0));
                 }
                 Err(msg) => panic!(msg),
             }
@@ -264,6 +274,36 @@ mod test {
                 Err(msg) => panic!(msg),
             }
         }
+    }
+
+    #[test]
+    fn test_eval() {
+        assert_eq!(eval(&parse("(1 + 1)").unwrap()), 2.0);
+        assert_eq!(eval(&parse("5").unwrap()), 5.0);
+        assert_eq!(eval(&parse("(1+4*5)-5").unwrap()), ((1 + 4 * 5) - 5) as f64);
+
+        // assert_eq!(
+        //     eval(&parse("4/(3-1)*5").unwrap()),
+        //     (4.0 / (3.0 - 1.0) * 5.0) as f64
+        // );
+
+        assert_eq!(eval(&parse("(3-1)*5+1").unwrap()), ((3 - 1) * 5 + 1) as f64);
+        assert_eq!(eval(&parse("2/2").unwrap()), (2.0 / 2.0) as f64);
+        assert_eq!(eval(&parse("1/3").unwrap()), (1.0 / 3.0) as f64);
+        assert_eq!(eval(&parse("2/2/3").unwrap()), (2.0 / 2.0 / 3.0) as f64);
+        assert_eq!(eval(&parse("2/2/3").unwrap()), (2.0 / 2.0 / 3.0) as f64);
+        assert_eq!(eval(&parse("4/5/6/7").unwrap()), 4.0 / 5.0 / 6.0 / 7.0);
+        assert_eq!(
+            eval(&parse("3/3/4/5/6").unwrap()),
+            (3.0 / 3.0 / 4.0 / 5.0 / 6.0)
+        );
+
+        let ast = match parse("2 + (4 * 3 / 2)") {
+            Ok(ast) => ast,
+            Err(msg) => panic!(msg),
+        };
+        let result = eval(&ast);
+        println!("{}", result);
     }
 
     #[test]
