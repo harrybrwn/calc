@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
+use std::fmt;
 use std::iter::Peekable;
 use std::str::Chars;
-use std::fmt;
 
 #[derive(Clone, PartialEq)]
 pub enum Op {
@@ -51,26 +51,94 @@ pub enum Token {
 
 pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
+    buf: Vec<Token>,
 }
 
 impl<'a> Lexer<'a> {
-
     pub fn new(text: &'a str) -> Self {
-        Self{
+        Self {
             chars: text.chars().peekable(),
+            buf: vec![],
         }
+    }
+
+    pub fn from(toks: Vec<Token>) -> Self {
+        return Self {
+            chars: "".chars().peekable(),
+            buf: toks,
+        };
     }
 
     pub fn peek(&mut self) -> Token {
-        next_token(&mut self.chars.clone())
+        if self.buf.len() > 0 {
+            self.buf[0]
+        } else {
+            let next = next_token(&mut self.chars);
+            self.buf.push(next);
+            next
+        }
     }
 
-    pub fn look_ahead(&self, n: usize) -> Token {
-        let mut chars = self.chars.clone();
-        for _ in 0..n {
-            next_token(&mut chars);
+    pub fn look_ahead(&mut self, n: usize) -> Token {
+        let len = self.buf.len();
+        if len > 0 && len > n {
+            return self.buf[n];
         }
-        next_token(&mut chars)
+
+        let mut next: Token;
+        for _ in len..n {
+            next = next_token(&mut self.chars);
+            self.buf.push(next);
+
+            if next == Token::End {
+                return next;
+            }
+        }
+        next = next_token(&mut self.chars);
+        self.buf.push(next);
+        next
+    }
+
+    pub fn discard(&mut self, n: usize) {
+        let len = self.buf.len();
+
+        if len < n {
+            self.buf.drain(0..len);
+            for _ in len..n {
+                next_token(&mut self.chars);
+            }
+        } else if len > n {
+            self.buf.drain(0..n);
+        }
+    }
+
+    pub fn copy_until_one_of(&self, toks: &[Token]) -> Vec<Token> {
+        let mut chars = self.chars.clone();
+        let mut v = vec![];
+        loop {
+            let t = next_token(&mut chars);
+            if t == Token::End {
+                break v;
+            }
+            for tok in toks {
+                if t == *tok {
+                    return v;
+                }
+            }
+            v.push(t);
+        }
+    }
+
+    pub fn copy_until(&self, tok: Token) -> Vec<Token> {
+        let mut chars = self.chars.clone();
+        let mut v = vec![];
+        loop {
+            let t = next_token(&mut chars);
+            if t == tok || t == Token::End {
+                break v;
+            }
+            v.push(t);
+        }
     }
 }
 
@@ -78,6 +146,9 @@ impl<'a> Iterator for Lexer<'a> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.buf.len() > 0 {
+            return Some(self.buf.remove(0));
+        }
         let tok = next_token(&mut self.chars);
         match tok {
             Token::End => None,
@@ -110,7 +181,7 @@ fn next_token(chars: &mut Peekable<Chars>) -> Token {
 fn eat_spaces(chars: &mut Peekable<Chars>) -> char {
     loop {
         let c = *chars.peek().unwrap_or(&'\0');
-        if c != ' ' {
+        if c != ' ' && c != '\n' && c != '\t' {
             break c;
         }
         chars.next();
@@ -125,8 +196,8 @@ fn lex_num<'a>(chars: &mut Peekable<Chars<'a>>) -> Token {
         let c = *chars.peek().unwrap_or(&'\0');
         if c == '.' {
             isfloat = true;
-        } else if c < '0' || c > '9'{
-            break
+        } else if c < '0' || c > '9' {
+            break;
         }
         s.push(c);
         chars.next();

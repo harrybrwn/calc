@@ -1,41 +1,34 @@
-use calc::lex::{Token, Lexer, lex};
+use calc::lex::{lex, Lexer, Token};
+
+// #[ignore]
+#[test]
+fn test_lexical() {
+    let s = "1+2";
+    let mut l = Lexer::new(s);
+    assert_eq!(Token::End, l.look_ahead(5));
+    assert_eq!(Token::End, l.look_ahead(10));
+}
 
 #[test]
 fn test_lex() {
     let s = "5 + 335 * (1.5+1)";
+    let expected = vec![
+        Token::Int(5),
+        Token::Op('+'),
+        Token::Int(335),
+        Token::Op('*'),
+        Token::OpenParen,
+        Token::Float(1.5),
+        Token::Op('+'),
+        Token::Int(1),
+        Token::CloseParen,
+    ];
     let res = lex(s);
-    match res[0] {
-        Token::Int(x) => assert_eq!(x, 5),
-        _ => panic!("should be a int token"),
-    }
-    match res[1] {
-        Token::Op(x) => assert_eq!(x, '+'),
-        _ => panic!("should be an op token"),
-    }
-    match res[2] {
-        Token::Int(x) => assert_eq!(x, 335),
-        _ => panic!("should be a int token"),
-    }
-    match res[3] {
-        Token::Op(x) => assert_eq!(x, '*'),
-        _ => panic!("should be an op"),
-    }
-    match res[4] {
-        Token::OpenParen => assert!(true),
-        _ => assert!(false),
-    }
-    match res[5] {
-        Token::Float(x) => assert_eq!(x, 1.5f64),
-        _ => panic!("should be float"),
-    }
-    match res[6] {
-        Token::Op(c) => assert_eq!(c, '+'),
-        Token::Int(x) => panic!("should not be number: {}", x),
-        _ => panic!("should be op"),
-    }
-    match res[8] {
-        Token::CloseParen => {},
-        _ => panic!("should be closed paren"),
+    assert!(res.len() > 1);
+    assert_eq!(res.len(), expected.len());
+
+    for i in 0..expected.len() - 1 {
+        assert_eq!(expected[i], res[i]);
     }
 
     let mut l = Lexer::new(s);
@@ -43,14 +36,13 @@ fn test_lex() {
         let p = l.peek().clone();
         let n = l.next().unwrap_or(Token::End);
 
-        // println!("{:?} {:?}", p, n);
         match (p, n) {
-            (Token::Int(a), Token::Int(b))     => assert_eq!(a, b),
+            (Token::Int(a), Token::Int(b)) => assert_eq!(a, b),
             (Token::Float(a), Token::Float(b)) => assert_eq!(a, b),
-            (Token::Op(a), Token::Op(b))       => assert_eq!(a, b),
+            (Token::Op(a), Token::Op(b)) => assert_eq!(a, b),
             (Token::OpenParen, Token::OpenParen) => (),
             (Token::CloseParen, Token::CloseParen) => (),
-            (Token::End, Token::End)           => break,
+            (Token::End, Token::End) => break,
             _ => panic!("tokens should be the same"),
         }
     }
@@ -90,6 +82,5 @@ fn test_both_lexers() {
         toks1.push(t);
     }
     let toks2 = lex(s);
-
     assert_eq!(toks1, toks2);
 }
