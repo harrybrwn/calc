@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::ast::Ast;
-use crate::lex::{Lexer, Token};
+use crate::lex::Token;
 
 type AstRes = Result<Ast, String>;
 
@@ -10,249 +10,240 @@ type AstRes = Result<Ast, String>;
 /// # Examples
 ///
 /// ```
-/// let ast = parse("2 + (4 * 3 / 2)");
-/// let result = eval(&ast);
+/// // let ast = parse("2 + (4 * 3 / 2)");
+/// // let result = eval(&ast);
 /// ```
 pub fn parse(text: &str) -> AstRes {
-    let mut l = Lexer::new(text);
-    parse_expr(&mut l)
+    // let mut l = Lexer::new(text);
+    Err(format!("no implemented {}", text))
 }
 
-fn parse_expr_tokens(toks: Vec<Token>) -> AstRes {
-    let mut trees: Vec<Ast> = vec![];
-}
-
-/**
- * Grammar: (see http://www.allisons.org/ll/ProgLang/Grammar/Top-Down/)
+/*
+ * < expression > ::= < term > + < expression > |
+ *                    < term > - < expression > |
+ *                    < term >
  *
- * expr   ::= expr + term |
- *            expr - term |
- *            term
- * term   ::= term * factor |
- *            term / factor |
- *            factor
- * factor ::= 0-9      |
- *            ( expr ) |
- *            - factor
+ * < term > ::= < factor > * < term > |
+ *              < factor > / < term > |
+ *              < factor >
+ *
+ * < factor > ::= (< expression >) |
+ *                < float > |
+ *                < int >   |
+ *                < var >
  */
 
-fn parse_expr(stream: &mut Lexer) -> AstRes {
-    let mut left: Vec<Token> = vec![];
-    let mut i = 0;
-    let op = loop {
-        let next = stream.look_ahead(i);
-        match next {
-            Token::End => {
-                println!("only term");
-                return parse_term(stream);
-            }
-            Token::Op('+') | Token::Op('-') => {
-                stream.discard(i + 1);
-                left.push(Token::End);
-                println!("left vec {} {:?}", i, left);
-                break next;
-            }
-            _ => {
-                left.insert(0, next);
-                i = i + 1;
-            }
+fn expr(toks: &mut Vec<Token>) -> AstRes {
+    let head = match term(toks) {
+        Ok(ast) => ast,
+        Err(msg) => return Err(msg),
+    };
+    if toks.len() == 0 {
+        return Ok(head);
+    }
+    let next = toks.remove(0);
+    let mut root = match next {
+        Token::Op(c) => match c {
+            '+' | '-' => Ast::new(Token::Op(c)),
+            _ => return Err(format!("invalid operation")),
+        },
+        _ => {
+            println!("expr: {}", head);
+            return Ok(head);
         }
     };
-
-    let right = parse_term(stream)?;
-    println!("op: {:?}, right term: {} {:?}", op, right, left);
-    if left.len() == 0 {
-        println!("no left term");
-        return Ok(right);
-    }
-    let sub_expr = parse_expr(&mut Lexer::from(left))?;
-    println!("left expr: {}", sub_expr);
-
-    if sub_expr.tok == Token::End {
-        Ok(Ast::from(op, vec![right]))
-    } else {
-        Ok(Ast::from(op, vec![sub_expr, right]))
-    }
+    let sub_expr = match expr(toks) {
+        Ok(ast) => ast,
+        Err(msg) => return Err(msg),
+    };
+    root.push(head);
+    root.push(sub_expr);
+    Ok(root)
+    // Ok(Ast::new(toks[0]))
 }
 
-fn parse_term(stream: &mut Lexer) -> AstRes {
-    let mut left = vec![];
-    let mut i = 0;
-    let op = loop {
-        let next = stream.look_ahead(i);
-
-        if next == Token::End {
-            println!("only factor");
-            return parse_factor(stream);
-        } else if next == Token::Op('*') || next == Token::Op('/') {
-            stream.discard(i + 1); // skip the operation
-            break next;
-        } else if next == Token::CloseParen {
-            // stream.discard(i);
-            // return parse_term(stream);
-        }
-        left.insert(0, next);
-        i = i + 1;
+fn term(toks: &mut Vec<Token>) -> AstRes {
+    let res = match factor(toks) {
+        Ok(ast) => ast,
+        Err(msg) => return Err(msg),
     };
-    let mut left_stream = Lexer::from(left);
-    let sub_term = parse_term(&mut left_stream)?;
-    let root = Ast::from(op, vec![sub_term, parse_factor(stream)?]);
-    println!("term result: {}", root);
+    if toks.len() == 0 {
+        return Ok(res);
+    }
+    let next = toks.remove(0);
+    let mut root = match next {
+        Token::Op(c) => match c {
+            '/' | '*' => Ast::new(Token::Op(c)),
+            _ => return Err(format!("invalid operation")),
+        },
+        // Token::End => return Ok(res),
+        _ => {
+            // println!("left: {}, next: {:?}", res, next);
+            if toks.len() == 0 {
+                println!("just returning {}", res);
+                return Ok(res);
+            }
+            match toks[0] {
+                // TODO: check too see what operations will break this
+                //       for now we are allowing all ops
+                Token::Op(..) => Ast::new(toks.remove(0)),
+                _ => {
+                    println!("other rem: {:?}", toks);
+                    return Ok(res);
+                }
+            }
+        }
+    };
+    let right = match term(toks) {
+        Ok(ast) => ast,
+        Err(msg) => return Err(msg),
+    };
+    println!("root:  {}", root);
+    println!("left:  {}", res);
+    println!("right: {}", right);
+    println!("rem:   {:?}", toks);
+    root.push(res);
+    root.push(right);
     Ok(root)
 }
 
-fn _parse_expr(stream: &mut Lexer) -> AstRes {
-    let head = match stream.look_ahead(1) {
-        Token::End => Ast::new(stream.next().unwrap()),
-        // this is the case where there is only a term,
-        // no op followed by a term.
-        _ => parse_term(stream)?,
-    };
-
-    let op = stream.next().unwrap_or(Token::End);
-    match op {
-        Token::End => Ok(head),
-        // Token::OpenParen | Token::CloseParen => {
-        //     println!("paren in parse_expr ----------------------------");
-        //     Ok(head)
-        // }
-        // this is the case where there is an operation
-        // followed by a term.
-        Token::Op(c) => match c {
-            '/' | '*' | '+' | '-' => {
-                let term = parse_term(stream)?;
-                Ok(Ast::from(op, vec![head, term]))
-            }
-            _ => panic!("i dont know what to do with this"),
-        },
-        _ => Err(String::from("expected + or - operation")),
-    }
-}
-
-// fn term_is_next(stream: &mut Lexer) -> bool {
-//     return false;
-// }
-
-fn _parse_term(stream: &mut Lexer) -> AstRes {
-    let head = match stream.look_ahead(1) {
-        // we have reched the end of an expression, must return
-        Token::CloseParen => return Ok(Ast::new(stream.next().unwrap())),
-        Token::Op(c) => match c {
-            '*' | '/' => Ast::new(stream.next().unwrap()),
-            _ => return parse_factor(stream),
-        },
-        _ => parse_factor(stream)?,
-    };
-
-    match stream.peek() {
-        Token::End => Ok(head),
-        _ => Ok(Ast::from(
-            stream.next().unwrap_or(Token::End),
-            vec![head, parse_factor(stream)?],
-        )),
-    }
-}
-
-fn parse_factor(stream: &mut Lexer) -> AstRes {
-    let head = stream.next().unwrap_or(Token::End);
-
-    match head {
-        Token::End => Ok(Ast::new(head)),
-        Token::Int(..) | Token::Float(..) => Ok(Ast::new(head)),
+fn factor(toks: &mut Vec<Token>) -> AstRes {
+    match toks[0] {
+        Token::Int(..) | Token::Float(..) => Ok(Ast::new(toks.remove(0))),
         Token::OpenParen => {
-            let expr = parse_expr(stream)?;
-            println!("( {} ) {:?}", expr, stream.peek());
-            match stream.peek() {
-                Token::CloseParen => {
-                    stream.next();
-                    Ok(expr)
-                }
-                Token::End => Ok(expr),
-                _ => Err(format!("expected ')'")),
+            toks.remove(0);
+            let mut exprtoks = until_oneof(toks, &[Token::CloseParen]);
+            print!("expression tokens: {:?}  ", exprtoks);
+            if exprtoks.pop().unwrap() != Token::CloseParen {
+                println!("\nneed closing paren in {:?}", toks);
+                return Err(format!("expected ')'"));
+            } else {
+                println!("ok found closing paren");
             }
-            // match stream.next().unwrap_or(Token::End) {
-            //     Token::CloseParen => expr,
-            //     _ => {
-            //         println!("open paren ?: {}", expr.unwrap());
-            //         Err(String::from("expected ')'"))
-            //     }
-            // }
+            // println!("expression tokens: {:?}", exprtoks);
+            toks.drain(0..exprtoks.len());
+            expr(&mut exprtoks)
         }
-        // only for negatives
-        Token::Op(c) => match c {
-            '-' => Ok(Ast::from(head, vec![parse_factor(stream)?])),
-            _ => Err(format!("invlaid operation '{}'", c)),
-        },
-        _ => Ok(Ast::new(head)),
+        _ => Err(format!("invalid factor")),
     }
+}
+
+fn until_oneof<'a>(tokens: &'a mut Vec<Token>, delim: &[Token]) -> Vec<Token> {
+    let mut v = vec![];
+    for token in tokens {
+        v.push(*token);
+        for t in delim {
+            if token == t {
+                return v;
+            }
+        }
+    }
+    v
 }
 
 #[cfg(test)]
 mod test {
-    use super::{parse, parse_expr, parse_factor};
-    use crate::ast::eval;
+    // use super::{parse, parse_expr, parse_factor};
+    use super::factor;
+    use super::term;
+    use crate::ast::Ast;
     use crate::lex::{Lexer, Token};
+    use crate::parser::until_oneof;
 
     #[test]
-    fn test_parse_factor() {
-        let mut l = Lexer::new("-4");
-        match parse_factor(&mut l) {
+    fn test_factor() {
+        // TODO: add "((1))" as a test-case
+        for s in vec!["1", "(1)"] {
+            match factor(&mut Lexer::new(s).as_vec()) {
+                Ok(ast) => {
+                    assert_eq!(ast.tok, Token::Int(1));
+                    assert_eq!(ast.children.len(), 0);
+                }
+                Err(msg) => panic!(msg),
+            }
+        }
+        let mut t = Lexer::new("1*1").as_vec();
+        match factor(&mut t) {
             Ok(ast) => {
-                assert_eq!(ast.tok, Token::Op('-'));
-                assert_eq!(ast.children[0].tok, Token::Int(4));
-                assert_eq!(eval(&ast), -4.0);
+                assert_eq!(ast.tok, Token::Int(1));
             }
             Err(msg) => panic!(msg),
         }
-        match parse("(-3)") {
-            Ok(ast) => {
-                println!("should be -3");
-                println!("{}", ast);
-                assert_eq!(eval(&ast), -3.0);
-                // assert_eq!(ast.tok, Token::OpenParen);
-            }
-            Err(msg) => panic!(msg),
+        match factor(&mut t) {
+            Err(..) => {}
+            Ok(..) => panic!("expected an error"),
         }
     }
 
     #[test]
-    fn test_lex_buffer() {
-        let mut l = Lexer::from(vec![
-            Token::Int(5),
-            Token::Op('+'),
-            Token::Int(335),
-            Token::Op('*'),
-            Token::OpenParen,
-            Token::Float(1.5),
-            Token::Op('+'),
-            Token::Int(1),
-            Token::CloseParen,
-        ]);
-        match parse_expr(&mut l) {
-            Ok(ast) => {
-                /*
-                 *   5.0 + 335.0 * (1.5 + 1.0)
-                 *
-                 *        +
-                 *     /     \
-                 *   5         *
-                 *            /  \
-                 *         335    +
-                 *              /   \
-                 *            1.5    1
-                 */
+    fn test_term() {
+        // match term(&mut Lexer::new("(1)").as_vec()) {
+        //     Ok(ast) => {
+        //         assert_eq!(ast.tok, Token::Int(1));
+        //     }
+        //     Err(msg) => panic!(msg),
+        // }
 
-                assert_eq!(eval(&ast), (5.0 + 335.0 * (1.5 + 1.0)));
-                assert_eq!(ast.tok, Token::Op('+'));
-                assert_eq!(ast.children[0].tok, Token::Int(5));
-                let ast = &ast.children[1];
-                assert_eq!(ast.tok, Token::Op('*'));
-                assert_eq!(ast.children[0].tok, Token::Int(335));
-                assert_eq!(ast.children[1].tok, Token::Op('+'));
-                assert_eq!(ast.children[1].children[0].tok, Token::Float(1.5));
-                assert_eq!(ast.children[1].children[1].tok, Token::Int(1));
+        // match term(&mut Lexer::new("1*1").as_vec()) {
+        //     Ok(ast) => {
+        //         assert_eq!(ast.tok, Token::Op('*'));
+        //         assert_eq!(ast.children[0].tok, Token::Int(1));
+        //         assert_eq!(ast.children[1].tok, Token::Int(1));
+        //     }
+        //     Err(msg) => panic!(msg),
+        // }
+        let _exp = Ast::from(
+            Token::Op('/'),
+            vec![
+                Ast::from(
+                    Token::Op('/'),
+                    vec![Ast::new(Token::Int(1)), Ast::new(Token::Int(1))],
+                ),
+                Ast::new(Token::Int(1)),
+            ],
+        );
+
+        for s in vec![
+            // "1/2/3",
+            // "1/2/(3)",
+            // "1/(2)/3",
+            // "(1)/2/3",
+            // "(1/2)/3",
+            "((1)/2)/3",
+        ] {
+            match term(&mut Lexer::new(s).as_vec()) {
+                Ok(ast) => {
+                    println!("{} => {}", s, ast);
+                    assert_eq!(ast.tok, Token::Op('/'));
+                    assert_eq!(ast.children[0].tok, Token::Op('/'));
+                    assert_eq!(ast.children[0].children[0].tok, Token::Int(1));
+                    assert_eq!(ast.children[0].children[1].tok, Token::Int(2));
+                    assert_eq!(ast.children[1].tok, Token::Int(3));
+                }
+                Err(msg) => panic!(msg),
             }
-            Err(msg) => panic!(msg),
         }
+
+        // match term(&mut Lexer::new("3*2").as_vec()) {
+        //     Ok(ast) => {
+        //         println!("{}", ast);
+        //     }
+        //     Err(msg) => panic!(msg),
+        // }
+    }
+
+    #[test]
+    fn test_tokens_until() {
+        let mut v = vec![
+            Token::OpenParen,
+            Token::Int(4),
+            Token::Op('+'),
+            Token::Int(2),
+            Token::CloseParen,
+        ];
+        let r = until_oneof(&mut v, &[Token::Op('+')]);
+        assert_eq!(r[0], Token::OpenParen);
+        assert_eq!(r[1], Token::Int(4));
+        assert_eq!(r[2], Token::Op('+'));
     }
 }

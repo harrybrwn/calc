@@ -13,6 +13,19 @@ pub enum Op {
     Invalid,
 }
 
+pub fn lex(s: &str) -> Vec<Token> {
+    let mut toks = vec![];
+    let mut chars = s.chars().peekable();
+
+    loop {
+        let next = next_token(&mut chars);
+        match next {
+            Token::End => break toks,
+            _ => toks.push(next),
+        }
+    }
+}
+
 impl fmt::Debug for Op {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match self {
@@ -112,32 +125,17 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn copy_until_one_of(&self, toks: &[Token]) -> Vec<Token> {
+    pub fn as_vec(&self) -> Vec<Token> {
         let mut chars = self.chars.clone();
         let mut v = vec![];
+
+        v.extend(&self.buf);
         loop {
             let t = next_token(&mut chars);
+            v.push(t);
             if t == Token::End {
                 break v;
             }
-            for tok in toks {
-                if t == *tok {
-                    return v;
-                }
-            }
-            v.push(t);
-        }
-    }
-
-    pub fn copy_until(&self, tok: Token) -> Vec<Token> {
-        let mut chars = self.chars.clone();
-        let mut v = vec![];
-        loop {
-            let t = next_token(&mut chars);
-            if t == tok || t == Token::End {
-                break v;
-            }
-            v.push(t);
         }
     }
 }
@@ -210,15 +208,5 @@ fn lex_num<'a>(chars: &mut Peekable<Chars<'a>>) -> Token {
     }
 }
 
-pub fn lex(s: &str) -> Vec<Token> {
-    let mut toks = vec![];
-    let mut chars = s.chars().peekable();
-
-    loop {
-        let next = next_token(&mut chars);
-        match next {
-            Token::End => break toks,
-            _ => toks.push(next),
-        }
-    }
-}
+#[cfg(test)]
+mod test {}
