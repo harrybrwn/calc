@@ -61,18 +61,25 @@ fn term(toks: &mut Vec<Token>) -> AstRes {
         Ok(ast) => ast,
         Err(msg) => return Err(msg),
     };
-    let mut root = match toks.remove(0) {
+    let mut root = match toks[0] {
         Token::Op(c) => match c {
-            '/' | '*' => Ast::new(Token::Op(c)),
+            '/' | '*' => Ast::new(toks.remove(0)),
+            '+' | '-' => return Ok(res),
             _ => return Err(format!("invalid operation")),
         },
-        _ if toks.len() == 0 => return Ok(res),
-        _ => match toks[0] {
-            // TODO: check too see what operations will break this
-            //       for now we are allowing all ops
-            Token::Op(..) => Ast::new(toks.remove(0)),
-            _ => return Ok(res),
-        },
+        // _ if toks.len() == 1 => return Ok(res),
+        _ => {
+            toks.remove(0);
+            if toks.len() < 1 {
+                return Ok(res);
+            }
+            match toks[0] {
+                // TODO: check too see what operations will break this
+                //       for now we are allowing all ops
+                Token::Op(..) => Ast::new(toks.remove(0)),
+                _ => return Ok(res),
+            }
+        }
     };
 
     let right = match term(toks) {
@@ -231,13 +238,32 @@ mod test {
 
     #[test]
     fn test_expr() {
-        // match expr(&mut Lexer::new("5 + 3 * 3 / 6").as_vec()) {
-        //     Ok(ast) => {
-        //         println!("{}", ast);
-        //         assert_eq!(eval(&ast), 5.0 + 3.0 * 3.0 / 6.0);
-        //     }
-        //     Err(msg) => panic!(msg),
-        // }
+        for s in vec![
+            "5 + 3 * 3 / 6",
+            "5+3*3/6",
+            "5+(3*3/6)",
+            "5+(3*(3/6))",
+            "(5+(3*3/6))",
+            "(5+(3*(3/6)))",
+            "5             +3  * (3)     / (          6)",
+        ] {
+            match expr(&mut Lexer::new(s).as_vec()) {
+                Ok(ast) => {
+                    assert_eq!(eval(&ast), 5.0 + 3.0 * 3.0 / 6.0);
+                    assert_eq!(eval(&ast), 5.0 + (3.0 * 3.0 / 6.0));
+                    assert_eq!(eval(&ast), 5.0 + (3.0 * (3.0 / 6.0)));
+                    assert_eq!(eval(&ast), 5.0 + 3.0 * (3.0 / 6.0));
+                    assert_eq!(ast.tok, Token::Op('+'));
+                    assert_eq!(ast.children[0].tok, Token::Int(5));
+                    assert_eq!(ast.children[1].tok, Token::Op('*'));
+                    assert_eq!(ast.children[1].children[0].tok, Token::Int(3));
+                    assert_eq!(ast.children[1].children[1].tok, Token::Op('/'));
+                    assert_eq!(ast.children[1].children[1].children[0].tok, Token::Int(3));
+                    assert_eq!(ast.children[1].children[1].children[1].tok, Token::Int(6));
+                }
+                Err(msg) => panic!(msg),
+            }
+        }
     }
 
     #[test]
