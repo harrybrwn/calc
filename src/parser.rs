@@ -35,22 +35,16 @@ pub fn parse(text: &str) -> AstRes {
 
 fn expr(toks: &mut Vec<Token>) -> AstRes {
     let head = match term(toks) {
+        Ok(ast) if toks.len() == 0 => return Ok(ast),
         Ok(ast) => ast,
         Err(msg) => return Err(msg),
     };
-    if toks.len() == 0 {
-        return Ok(head);
-    }
-    let next = toks.remove(0);
-    let mut root = match next {
+    let mut root = match toks.remove(0) {
         Token::Op(c) => match c {
             '+' | '-' => Ast::new(Token::Op(c)),
             _ => return Err(format!("invalid operation")),
         },
-        _ => {
-            println!("expr: {}", head);
-            return Ok(head);
-        }
+        _ => return Ok(head),
     };
     let sub_expr = match expr(toks) {
         Ok(ast) => ast,
@@ -59,49 +53,32 @@ fn expr(toks: &mut Vec<Token>) -> AstRes {
     root.push(head);
     root.push(sub_expr);
     Ok(root)
-    // Ok(Ast::new(toks[0]))
 }
 
 fn term(toks: &mut Vec<Token>) -> AstRes {
     let res = match factor(toks) {
+        Ok(ast) if toks.len() == 0 => return Ok(ast),
         Ok(ast) => ast,
         Err(msg) => return Err(msg),
     };
-    if toks.len() == 0 {
-        return Ok(res);
-    }
-    let next = toks.remove(0);
-    let mut root = match next {
+    let mut root = match toks.remove(0) {
         Token::Op(c) => match c {
             '/' | '*' => Ast::new(Token::Op(c)),
             _ => return Err(format!("invalid operation")),
         },
-        // Token::End => return Ok(res),
-        _ => {
-            // println!("left: {}, next: {:?}", res, next);
-            if toks.len() == 0 {
-                println!("just returning {}", res);
-                return Ok(res);
-            }
-            match toks[0] {
-                // TODO: check too see what operations will break this
-                //       for now we are allowing all ops
-                Token::Op(..) => Ast::new(toks.remove(0)),
-                _ => {
-                    println!("other rem: {:?}", toks);
-                    return Ok(res);
-                }
-            }
-        }
+        _ if toks.len() == 0 => return Ok(res),
+        _ => match toks[0] {
+            // TODO: check too see what operations will break this
+            //       for now we are allowing all ops
+            Token::Op(..) => Ast::new(toks.remove(0)),
+            _ => return Ok(res),
+        },
     };
+
     let right = match term(toks) {
         Ok(ast) => ast,
         Err(msg) => return Err(msg),
     };
-    println!("root:  {}", root);
-    println!("left:  {}", res);
-    println!("right: {}", right);
-    println!("rem:   {:?}", toks);
     root.push(res);
     root.push(right);
     Ok(root)
@@ -111,20 +88,34 @@ fn factor(toks: &mut Vec<Token>) -> AstRes {
     match toks[0] {
         Token::Int(..) | Token::Float(..) => Ok(Ast::new(toks.remove(0))),
         Token::OpenParen => {
-            toks.remove(0);
-            let mut exprtoks = until_oneof(toks, &[Token::CloseParen]);
-            print!("expression tokens: {:?}  ", exprtoks);
-            if exprtoks.pop().unwrap() != Token::CloseParen {
-                println!("\nneed closing paren in {:?}", toks);
-                return Err(format!("expected ')'"));
-            } else {
-                println!("ok found closing paren");
+            toks.remove(0); // shift left
+            let mut exprtoks = vec![];
+            let mut paren = 0;
+            for t in toks.clone() {
+                match t {
+                    Token::CloseParen => {
+                        if paren == 0 {
+                            exprtoks.push(t);
+                            break;
+                        } else {
+                            paren -= 1;
+                        }
+                    }
+                    Token::OpenParen => {
+                        paren += 1;
+                    }
+                    _ => {}
+                }
+                exprtoks.push(t);
             }
-            // println!("expression tokens: {:?}", exprtoks);
-            toks.drain(0..exprtoks.len());
+            let size = exprtoks.len() - 1;
+            if exprtoks.pop().unwrap() != Token::CloseParen {
+                return Err(format!("expected ')'"));
+            }
+            toks.drain(0..size + 0);
             expr(&mut exprtoks)
         }
-        _ => Err(format!("invalid factor")),
+        _ => Err(format!("invalid factor '{:?}'", toks[0])),
     }
 }
 
@@ -146,14 +137,15 @@ mod test {
     // use super::{parse, parse_expr, parse_factor};
     use super::factor;
     use super::term;
+    use crate::ast::eval;
     use crate::ast::Ast;
     use crate::lex::{Lexer, Token};
+    use crate::parser::expr;
     use crate::parser::until_oneof;
 
     #[test]
     fn test_factor() {
-        // TODO: add "((1))" as a test-case
-        for s in vec!["1", "(1)"] {
+        for s in vec!["1", "(1)", "((1))"] {
             match factor(&mut Lexer::new(s).as_vec()) {
                 Ok(ast) => {
                     assert_eq!(ast.tok, Token::Int(1));
@@ -177,21 +169,21 @@ mod test {
 
     #[test]
     fn test_term() {
-        // match term(&mut Lexer::new("(1)").as_vec()) {
-        //     Ok(ast) => {
-        //         assert_eq!(ast.tok, Token::Int(1));
-        //     }
-        //     Err(msg) => panic!(msg),
-        // }
+        match term(&mut Lexer::new("(1)").as_vec()) {
+            Ok(ast) => {
+                assert_eq!(ast.tok, Token::Int(1));
+            }
+            Err(msg) => panic!(msg),
+        }
 
-        // match term(&mut Lexer::new("1*1").as_vec()) {
-        //     Ok(ast) => {
-        //         assert_eq!(ast.tok, Token::Op('*'));
-        //         assert_eq!(ast.children[0].tok, Token::Int(1));
-        //         assert_eq!(ast.children[1].tok, Token::Int(1));
-        //     }
-        //     Err(msg) => panic!(msg),
-        // }
+        match term(&mut Lexer::new("1*1").as_vec()) {
+            Ok(ast) => {
+                assert_eq!(ast.tok, Token::Op('*'));
+                assert_eq!(ast.children[0].tok, Token::Int(1));
+                assert_eq!(ast.children[1].tok, Token::Int(1));
+            }
+            Err(msg) => panic!(msg),
+        }
         let _exp = Ast::from(
             Token::Op('/'),
             vec![
@@ -204,29 +196,45 @@ mod test {
         );
 
         for s in vec![
-            // "1/2/3",
-            // "1/2/(3)",
-            // "1/(2)/3",
-            // "(1)/2/3",
-            // "(1/2)/3",
+            "1/2/3",
+            "1/2/(3)",
+            "(1)/2/3",
+            "(1/2)/3",
+            "1/(2)/3",
             "((1)/2)/3",
+            "(((1/2/3)))",
+            "(((((1/2)/3))))",
         ] {
             match term(&mut Lexer::new(s).as_vec()) {
                 Ok(ast) => {
-                    println!("{} => {}", s, ast);
                     assert_eq!(ast.tok, Token::Op('/'));
                     assert_eq!(ast.children[0].tok, Token::Op('/'));
                     assert_eq!(ast.children[0].children[0].tok, Token::Int(1));
                     assert_eq!(ast.children[0].children[1].tok, Token::Int(2));
                     assert_eq!(ast.children[1].tok, Token::Int(3));
+                    assert_eq!(eval(&ast), (1.0 / 2.0 / 3.0));
                 }
                 Err(msg) => panic!(msg),
             }
         }
+        match term(&mut Lexer::new("3*2*5").as_vec()) {
+            Ok(ast) => {
+                assert_eq!(ast.tok, Token::Op('*'));
+                assert_eq!(ast.children[0].tok, Token::Int(3));
+                assert_eq!(ast.children[1].tok, Token::Op('*'));
+                assert_eq!(ast.children[1].children[0].tok, Token::Int(2));
+                assert_eq!(ast.children[1].children[1].tok, Token::Int(5));
+            }
+            Err(msg) => panic!(msg),
+        }
+    }
 
-        // match term(&mut Lexer::new("3*2").as_vec()) {
+    #[test]
+    fn test_expr() {
+        // match expr(&mut Lexer::new("5 + 3 * 3 / 6").as_vec()) {
         //     Ok(ast) => {
         //         println!("{}", ast);
+        //         assert_eq!(eval(&ast), 5.0 + 3.0 * 3.0 / 6.0);
         //     }
         //     Err(msg) => panic!(msg),
         // }
