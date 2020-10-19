@@ -1,4 +1,9 @@
+# Dev
+/.vscode
+
+# Build
 /target
 **/*.rs.bk
 
+# Notes
 Grammar
