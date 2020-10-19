@@ -29,6 +29,10 @@ pub fn eval(ast: &Ast) -> f64 {
                 '-' => left - right,
                 '*' => left * right,
                 '/' => left / right,
+                '^' => {
+                    let base = eval(&ast.children[0]);
+                    base.powf(eval(right))
+                }
                 _ => panic!("invalid operation"),
             }
         }
@@ -78,7 +82,7 @@ impl Ast {
         match (self.tok, ast.tok) {
             (Token::Op(l), Token::Op(r)) if !ast.grouped => match (l, r) {
                 // for any combination of div and mul rotate left
-                ('/', '/') | ('*', '*') | ('/', '*') | ('*', '/') => {
+                ('/', '/') | ('*', '*') | ('/', '*') | ('*', '/') | ('^', '/') | ('^', '*') => {
                     self.children.push(ast);
                     self.rotate_left();
                 }

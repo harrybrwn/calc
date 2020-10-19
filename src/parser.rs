@@ -58,7 +58,7 @@ fn term(toks: &mut Lexer) -> AstRes {
 
     let mut root = match toks.peek() {
         Token::Op(c) => match c {
-            '/' | '*' => Ast::new(match toks.next() {
+            '^' | '/' | '*' => Ast::new(match toks.next() {
                 Some(tok) => tok,
                 None => {
                     return Err(format!(
@@ -67,7 +67,7 @@ fn term(toks: &mut Lexer) -> AstRes {
                 }
             }),
             '+' | '-' => return Ok(res),
-            _ => return Err(format!("invalid operation")),
+            _ => return Err(format!("invalid operation '{}'", c)),
         },
         _ => {
             match toks.next() {
@@ -80,7 +80,7 @@ fn term(toks: &mut Lexer) -> AstRes {
                 None => return Ok(res),
             }
             match toks.peek() {
-                Token::Op('/') | Token::Op('*') => Ast::new(toks.next().unwrap()),
+                Token::Op('^') | Token::Op('/') | Token::Op('*') => Ast::new(toks.next().unwrap()),
                 _ => return Ok(res),
             }
         }
@@ -161,36 +161,90 @@ mod test {
     use super::parse;
     use super::{expr, factor, term, until_oneof};
     use crate::ast::eval;
+    use crate::exec;
     use crate::lex::{Lexer, Token};
 
     #[test]
+    fn test_exponentiate() {
+        for s in vec!["2^2", "2^(2)", "(2)^2", "(2)^(2)"] {
+            match parse(s) {
+                Ok(ast) => {
+                    assert_eq!(ast.tok, Token::Op('^'));
+                    assert_eq!(ast.children[0].tok, Token::Int(2));
+                    assert_eq!(ast.children[1].tok, Token::Int(2));
+                }
+                Err(msg) => panic!(msg),
+            }
+        }
+        for s in vec!["2^3^2", "2^(3^2)"] {
+            match parse(s) {
+                Ok(ast) => {
+                    assert_eq!(ast.tok, Token::Op('^'));
+                    assert_eq!(ast.children[0].tok, Token::Int(2));
+                    assert_eq!(ast.children[1].tok, Token::Op('^'));
+                    assert_eq!(ast.children[1].children[0].tok, Token::Int(3));
+                    assert_eq!(ast.children[1].children[1].tok, Token::Int(2));
+                    assert_eq!(eval(&ast), (2.0 as f64).powf((3.0 as f64).powf(2.0)));
+                }
+                Err(msg) => panic!(msg),
+            }
+        }
+        match parse("(2^3)^2") {
+            Ok(ast) => {
+                assert_eq!(ast.tok, Token::Op('^'));
+                assert_eq!(ast.children[1].tok, Token::Int(2));
+                assert_eq!(ast.children[0].tok, Token::Op('^'));
+                assert_eq!(ast.children[0].children[0].tok, Token::Int(2));
+                assert_eq!(ast.children[0].children[1].tok, Token::Int(3));
+                assert_eq!(eval(&ast), (2.0 as f64).powf(3.0).powf(2.0));
+            }
+            Err(msg) => panic!(msg),
+        }
+    }
+
+    #[test]
     fn test_eval() {
-        let t = match parse("3/(3/4/5)/6") {
-            Ok(ast) => ast,
-            Err(msg) => panic!(msg),
-        };
-        assert_eq!(eval(&t), 3.0 / (3.0 / 4.0 / 5.0) / 6.0);
-        assert_eq!(eval(&parse("-(1 + 1)").unwrap()), -2.0);
-        assert_eq!(eval(&parse("-5").unwrap()), -5.0);
-        assert_eq!(eval(&parse("(1+4*5)-5").unwrap()), ((1 + 4 * 5) - 5) as f64);
-        assert_eq!(eval(&parse("4/(3-1)").unwrap()), 4.0 / (3.0 - 1.0));
-        assert_eq!(eval(&parse("(3-1)*5").unwrap()), (3.0 - 1.0) * 5.0);
-        assert_eq!(eval(&parse("4/(3-1)*5").unwrap()), 4.0 / (3.0 - 1.0) * 5.0);
-        assert_eq!(eval(&parse("(3-1)*5+1").unwrap()), (3.0 - 1.0) * 5.0 + 1.0);
-        assert_eq!(eval(&parse("2/2").unwrap()), 2.0 / 2.0);
-        assert_eq!(eval(&parse("1/3").unwrap()), 1.0 / 3.0);
-        assert_eq!(eval(&parse("2/2/3").unwrap()), 2.0 / 2.0 / 3.0);
-        assert_eq!(eval(&parse("2/2/3").unwrap()), 2.0 / 2.0 / 3.0);
-        assert_eq!(eval(&parse("4/5/6/7").unwrap()), 4.0 / 5.0 / 6.0 / 7.0);
-        assert_eq!(
-            eval(&parse("3/3/4/5/6").unwrap()),
-            3.0 / 3.0 / 4.0 / 5.0 / 6.0
-        );
-        let ast = match parse("2 + (4 * 3 / 2)") {
-            Ok(ast) => ast,
-            Err(msg) => panic!(msg),
-        };
-        assert_eq!(eval(&ast), 2.0 + (4.0 * 3.0 / 2.0));
+        for tc in vec![
+            ("-(1+1)", -2.0),
+            ("-(1.3+1.9)", -(1.3 + 1.9)),
+            ("-5", -5.0),
+            ("(1+4*5)-5", ((1.0 + 4.0 * 5.0) - 5.0)),
+            ("4/(4-1)*5", 4.0 / (4.0 - 1.0) * 5.0),
+            ("4/5/6/7", 4.0 / 5.0 / 6.0 / 7.0),
+            ("2/2/3", 2.0 / 2.0 / 3.0),
+            ("3/3/4/5/6", 3.0 / 3.0 / 4.0 / 5.0 / 6.0),
+            ("(3-1)*5+1", (3.0 - 1.0) * 5.0 + 1.0),
+            ("2^3^2", (2 as f64).powf((3 as f64).powf(2.0))),
+            ("2.3^3^2", (2.3 as f64).powf((3 as f64).powf(2.0))),
+            ("(2^3)^2", (2 as f64).powf(3.0).powf(2.0)),
+            ("5^3/2", (5 as f64).powf(3.0) / 2.0),
+            ("5.3^3/2.7", (5.3 as f64).powf(3.0) / 2.7),
+            ("5^3*2", (5 as f64).powf(3.0) * 2.0),
+            ("2*5^3", 2.0 * (5 as f64).powf(3.0)),
+            ("5^3+2", (5 as f64).powf(3.0) + 2.0),
+            ("5^3-2", (5 as f64).powf(3.0) - 2.0),
+            ("5*3^2", (5.0 * (3 as f64).powf(2.0))),
+            ("5*(3^2)", 5.0 * (3 as f64).powf(2.0)),
+            ("3/(3/4/5)/6", 3.0 / (3.0 / 4.0 / 5.0) / 6.0),
+            (
+                "3/(3*3-2/4/5)^2/6",
+                3.0 / ((3.0 * 3.0 - 2.0 / 4.0 / 5.0) as f64).powf(2.0) / 6.0,
+            ),
+            (
+                "1+3/(3*3-2/4/5)^2/6",
+                1.0 + 3.0 / ((3.0 * 3.0 - 2.0 / 4.0 / 5.0) as f64).powf(2.0) / 6.0,
+            ),
+            ("2+(4*3/2)", 2.0 + (4.0 * 3.0 / 2.0)),
+            ("2+4^3-6", 60.0),
+            ("2*4^3", 2.0 * (4 as f64).powf(3.0)),
+            ("(((2)))", 2.0),
+            ("((((((((((3.5))))))))))", 3.5),
+            ("2^2", 4.0),
+            ("(2)^2", 4.0),
+            ("(2)^(2)", 4.0),
+        ] {
+            assert_eq!(exec(tc.0).unwrap(), tc.1);
+        }
     }
 
     #[test]
