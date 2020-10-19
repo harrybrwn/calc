@@ -36,6 +36,7 @@ pub fn eval(ast: &Ast) -> f64 {
                 _ => panic!("invalid operation"),
             }
         }
+        Token::Modulus => eval(&ast.children[0]) % eval(&ast.children[1]),
         Token::Int(n) => n as f64,
         Token::Float(n) => n,
         _ => 0.0,
@@ -80,16 +81,26 @@ impl Ast {
 
     pub fn push(&mut self, ast: Ast) {
         match (self.tok, ast.tok) {
+            (Token::Modulus, Token::Op(r)) if !ast.grouped => match r {
+                '*' | '/' => {
+                    self.children.push(ast);
+                    self.rotate_left();
+                    return;
+                },
+                _ => {},
+            }
             (Token::Op(l), Token::Op(r)) if !ast.grouped => match (l, r) {
                 // for any combination of div and mul rotate left
                 ('/', '/') | ('*', '*') | ('/', '*') | ('*', '/') | ('^', '/') | ('^', '*') => {
                     self.children.push(ast);
                     self.rotate_left();
+                    return;
                 }
-                _ => self.children.push(ast),
+                _ => {},
             },
-            _ => self.children.push(ast),
+            _ => {},
         }
+        self.children.push(ast);
     }
 
     fn rotate_left(&mut self) {

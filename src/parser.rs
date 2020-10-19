@@ -1,7 +1,19 @@
 #![allow(dead_code)]
 
 use crate::ast::Ast;
-use crate::lex::{Lexer, Token};
+use crate::lex::{
+    Lexer,
+    Token,
+    Token::{
+        Op,
+        Int,
+        Float,
+        Modulus,
+        OpenParen,
+        CloseParen,
+        Invalid,
+    },
+};
 
 type AstRes = Result<Ast, String>;
 
@@ -17,8 +29,10 @@ pub fn parse(text: &str) -> AstRes {
  *                    < term > - < expression > |
  *                    < term >
  *
- * < term > ::= < factor > * < term > |
- *              < factor > / < term > |
+ * < term > ::= < factor > *   < term > |
+ *              < factor > /   < term > |
+ *              < factor > ^   < term > |
+ *              < factor > mod < term > |
  *              < factor >
  *
  * < factor > ::= (< expression >) |
@@ -35,8 +49,8 @@ fn expr(toks: &mut Lexer) -> AstRes {
     };
 
     let mut root = match toks.next().unwrap() {
-        Token::Op(c) => match c {
-            '+' | '-' => Ast::new(Token::Op(c)),
+        Op(c) => match c {
+            '+' | '-' => Ast::new(Op(c)),
             _ => return Err(format!("invalid operation")),
         },
         _ => return Ok(head),
@@ -57,7 +71,7 @@ fn term(toks: &mut Lexer) -> AstRes {
     };
 
     let mut root = match toks.peek() {
-        Token::Op(c) => match c {
+        Op(c) => match c {
             '^' | '/' | '*' => Ast::new(match toks.next() {
                 Some(tok) => tok,
                 None => {
@@ -69,21 +83,15 @@ fn term(toks: &mut Lexer) -> AstRes {
             '+' | '-' => return Ok(res),
             _ => return Err(format!("invalid operation '{}'", c)),
         },
-        _ => {
-            match toks.next() {
-                Some(t) => match t {
-                    Token::End => {
-                        return Ok(res);
-                    }
-                    _ => {}
-                },
-                None => return Ok(res),
-            }
+        Modulus => Ast::new(toks.next().unwrap()),
+        CloseParen => {
+            toks.next();
             match toks.peek() {
-                Token::Op('^') | Token::Op('/') | Token::Op('*') => Ast::new(toks.next().unwrap()),
+                Op('^') | Op('/') | Op('*') => Ast::new(toks.next().unwrap()),
                 _ => return Ok(res),
             }
         }
+        _ => panic!("unexpected input"),
     };
     root.push(res);
     if let Ok(rhs) = term(toks) {
@@ -92,31 +100,15 @@ fn term(toks: &mut Lexer) -> AstRes {
     Ok(root)
 }
 
-fn exponentiate(toks: &mut Lexer) -> Result<Ast, String> {
-    let fctr = match factor(toks) {
-        Ok(ast) => ast,
-        Err(msg) => return Err(msg),
-    };
-    let mut carrot = match toks.peek() {
-        Token::Op('^') => Ast::new(toks.next().unwrap()),
-        _ => return Ok(fctr),
-    };
-    carrot.push(match factor(toks) {
-        Ok(ast) => ast,
-        Err(msg) => return Err(msg),
-    });
-    Ok(carrot)
-}
-
 fn factor(toks: &mut Lexer) -> AstRes {
     match toks.peek() {
-        Token::Int(..) | Token::Float(..) => Ok(Ast::new(toks.next().unwrap())),
-        Token::OpenParen => match expr(&mut toks.capture_group()?) {
+        Int(..) | Float(..) => Ok(Ast::new(toks.next().unwrap())),
+        OpenParen => match expr(&mut toks.capture_group()?) {
             Ok(ast) => Ok(ast.as_grouped()),
             Err(msg) => Err(msg),
         },
-        Token::Op('-') => Ok(Ast::from(toks.next().unwrap(), vec![factor(toks)?])),
-        Token::Invalid => Err(format!("invalid input")),
+        Op('-') => Ok(Ast::from(toks.next().unwrap(), vec![factor(toks)?])),
+        Invalid => Err(format!("invalid input")),
         _ => Err(format!("invalid factor '{:?}'", toks.peek())),
     }
 }
@@ -127,14 +119,14 @@ fn extract_from_parens(toks: &mut Vec<Token>) -> Result<Vec<Token>, String> {
     for t in toks.clone() {
         expr.push(t);
         match t {
-            Token::CloseParen => {
+            CloseParen => {
                 if paren == 0 {
                     break;
                 } else {
                     paren -= 1;
                 }
             }
-            Token::OpenParen => {
+            OpenParen => {
                 paren += 1;
             }
             _ => {}
@@ -162,7 +154,21 @@ mod test {
     use super::{expr, factor, term, until_oneof};
     use crate::ast::eval;
     use crate::exec;
-    use crate::lex::{Lexer, Token};
+    use crate::lex::{Lexer, Token, Token::{Int}};
+
+    #[test]
+    fn test_modulo() {
+        match parse("4 mod 5") {
+            Ok(ast) => {
+                println!("{}", ast);
+                assert_eq!(ast.tok, Token::Modulus);
+                assert_eq!(ast.children[0].tok, Int(4));
+                assert_eq!(ast.children[1].tok, Int(5));
+                assert_eq!(eval(&ast), 4.0 % 5.0);
+            },
+            Err(msg) => panic!(msg),
+        }
+    }
 
     #[test]
     fn test_exponentiate() {
@@ -170,8 +176,8 @@ mod test {
             match parse(s) {
                 Ok(ast) => {
                     assert_eq!(ast.tok, Token::Op('^'));
-                    assert_eq!(ast.children[0].tok, Token::Int(2));
-                    assert_eq!(ast.children[1].tok, Token::Int(2));
+                    assert_eq!(ast.children[0].tok, Int(2));
+                    assert_eq!(ast.children[1].tok, Int(2));
                 }
                 Err(msg) => panic!(msg),
             }
@@ -180,10 +186,10 @@ mod test {
             match parse(s) {
                 Ok(ast) => {
                     assert_eq!(ast.tok, Token::Op('^'));
-                    assert_eq!(ast.children[0].tok, Token::Int(2));
+                    assert_eq!(ast.children[0].tok, Int(2));
                     assert_eq!(ast.children[1].tok, Token::Op('^'));
-                    assert_eq!(ast.children[1].children[0].tok, Token::Int(3));
-                    assert_eq!(ast.children[1].children[1].tok, Token::Int(2));
+                    assert_eq!(ast.children[1].children[0].tok, Int(3));
+                    assert_eq!(ast.children[1].children[1].tok, Int(2));
                     assert_eq!(eval(&ast), (2.0 as f64).powf((3.0 as f64).powf(2.0)));
                 }
                 Err(msg) => panic!(msg),
@@ -192,10 +198,10 @@ mod test {
         match parse("(2^3)^2") {
             Ok(ast) => {
                 assert_eq!(ast.tok, Token::Op('^'));
-                assert_eq!(ast.children[1].tok, Token::Int(2));
+                assert_eq!(ast.children[1].tok, Int(2));
                 assert_eq!(ast.children[0].tok, Token::Op('^'));
-                assert_eq!(ast.children[0].children[0].tok, Token::Int(2));
-                assert_eq!(ast.children[0].children[1].tok, Token::Int(3));
+                assert_eq!(ast.children[0].children[0].tok, Int(2));
+                assert_eq!(ast.children[0].children[1].tok, Int(3));
                 assert_eq!(eval(&ast), (2.0 as f64).powf(3.0).powf(2.0));
             }
             Err(msg) => panic!(msg),
@@ -242,6 +248,12 @@ mod test {
             ("2^2", 4.0),
             ("(2)^2", 4.0),
             ("(2)^(2)", 4.0),
+            ("4 mod 5", 4.0 % 5.0),
+            ("(4 mod 5)", 4.0 % 5.0),
+            ("4 mod 5 * 2", (4.0 % 5.0) * 2.0),
+            ("4 mod 5 * 2", 4.0 % 5.0 * 2.0),
+            ("4 mod 5 / 2", (4.0 % 5.0) / 2.0),
+            ("4 mod 5 + 2", 4.0 % 5.0 + 2.0),
         ] {
             assert_eq!(exec(tc.0).unwrap(), tc.1);
         }
@@ -254,13 +266,13 @@ mod test {
             Err(msg) => panic!(msg),
         };
         assert_eq!(t.children[0].tok, Token::Op('/'));
-        assert_eq!(t.children[1].tok, Token::Int(6));
-        assert_eq!(t.children[0].children[0].tok, Token::Int(3));
+        assert_eq!(t.children[1].tok, Int(6));
+        assert_eq!(t.children[0].children[0].tok, Int(3));
         assert_eq!(t.children[0].children[1].children[0].tok, Token::Op('/'));
-        assert_eq!(t.children[0].children[1].children[1].tok, Token::Int(5));
+        assert_eq!(t.children[0].children[1].children[1].tok, Int(5));
         let sub = &t.children[0].children[1].children[0];
-        assert_eq!(sub.children[0].tok, Token::Int(3));
-        assert_eq!(sub.children[1].tok, Token::Int(4));
+        assert_eq!(sub.children[0].tok, Int(3));
+        assert_eq!(sub.children[1].tok, Int(4));
         assert_eq!(eval(&t), 3.0 / (3.0 / 4.0 / 5.0) / 6.0);
         match parse("") {
             Err(..) => {}
@@ -275,7 +287,7 @@ mod test {
             let mut t = Lexer::new(s);
             match factor(&mut t) {
                 Ok(ast) => {
-                    assert_eq!(ast.tok, Token::Int(1));
+                    assert_eq!(ast.tok, Int(1));
                     assert_eq!(ast.children.len(), 0);
                 }
                 Err(msg) => panic!(msg),
@@ -298,20 +310,19 @@ mod test {
     #[test]
     fn test_term() {
         match term(&mut Lexer::new("(1)")) {
-            Ok(ast) => assert_eq!(ast.tok, Token::Int(1)),
+            Ok(ast) => assert_eq!(ast.tok, Int(1)),
             Err(msg) => panic!(msg),
         }
         match term(&mut Lexer::new("1*1")) {
             Ok(ast) => {
                 assert_eq!(ast.tok, Token::Op('*'));
-                assert_eq!(ast.children[0].tok, Token::Int(1));
-                assert_eq!(ast.children[1].tok, Token::Int(1));
+                assert_eq!(ast.children[0].tok, Int(1));
+                assert_eq!(ast.children[1].tok, Int(1));
             }
             Err(msg) => panic!(msg),
         }
 
         for s in vec![
-            // division
             ("1/2/3", '/'),
             ("1/2/(3)", '/'),
             ("(1)/2/3", '/'),
@@ -320,7 +331,6 @@ mod test {
             ("((1)/2)/3", '/'),
             ("(((1/2/3)))", '/'),
             ("(((((1/2)/3))))", '/'),
-            // multiplication
             ("1*2*3", '*'),
             ("1*2*(3)", '*'),
             ("(1)*2*3", '*'),
@@ -334,9 +344,9 @@ mod test {
                 Ok(ast) => {
                     assert_eq!(ast.tok, Token::Op(s.1));
                     assert_eq!(ast.children[0].tok, Token::Op(s.1));
-                    assert_eq!(ast.children[0].children[0].tok, Token::Int(1));
-                    assert_eq!(ast.children[0].children[1].tok, Token::Int(2));
-                    assert_eq!(ast.children[1].tok, Token::Int(3));
+                    assert_eq!(ast.children[0].children[0].tok, Int(1));
+                    assert_eq!(ast.children[0].children[1].tok, Int(2));
+                    assert_eq!(ast.children[1].tok, Int(3));
                     assert_eq!(
                         eval(&ast),
                         match s.1 {
@@ -353,9 +363,9 @@ mod test {
             Ok(ast) => {
                 assert_eq!(ast.tok, Token::Op('*'));
                 assert_eq!(ast.children[0].tok, Token::Op('*'));
-                assert_eq!(ast.children[0].children[0].tok, Token::Int(3));
-                assert_eq!(ast.children[0].children[1].tok, Token::Int(2));
-                assert_eq!(ast.children[1].tok, Token::Int(5));
+                assert_eq!(ast.children[0].children[0].tok, Int(3));
+                assert_eq!(ast.children[0].children[1].tok, Int(2));
+                assert_eq!(ast.children[1].tok, Int(5));
             }
             Err(msg) => panic!(msg),
         }
@@ -389,7 +399,7 @@ mod test {
                         assert_eq!(r, *a);
                     }
                     assert_eq!(ast.tok, Token::Op('+'));
-                    assert_eq!(ast.children[0].tok, Token::Int(5));
+                    assert_eq!(ast.children[0].tok, Int(5));
                     assert_eq!(ast.children[1].tok, Token::Op('/'));
                     assert_eq!(ast.children[1].children[0].tok, Token::Op('*'));
                     assert_eq!(ast.children[1].children[0].children[0].tok, Token::Int(3));

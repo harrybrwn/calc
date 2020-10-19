@@ -21,9 +21,10 @@ pub enum Token {
     OpenParen,
     CloseParen,
 
+    Modulus, // TODO: implement modulus as a keywork 4 mod 3
     Func,   // TODO: add functions
     Assign, // TODO: add assignment support ("let name = ...")
-    Equal,  // TODO: a single equal sign like real math
+    Equal,  // TODO: a single equal sign like real math f = 2*x
 
     End,
     Invalid,
@@ -59,6 +60,18 @@ fn next_token<'b>(chars: &'b mut Peekable<Chars>) -> Token {
             '0'..='9' | '.' => return lex_num(chars),
             '-' | '+' | '*' | '/' | '^' => Token::Op(c),
             // '!' => Token::Invalid, // TODO: factorial
+            'a'..='z' => {
+                let key = "mod".chars();
+                for ch in key {
+                    if let Some(&peeked) = chars.peek() {
+                        if ch != peeked {
+                            return Token::Invalid;
+                        }
+                        chars.next();
+                    }
+                }
+                Token::Modulus
+            },
             _ => return Token::Invalid,
         },
         None => return Token::Invalid,
@@ -66,7 +79,6 @@ fn next_token<'b>(chars: &'b mut Peekable<Chars>) -> Token {
     chars.next();
     tok
 }
-
 pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
     buf: Vec<Token>,
@@ -187,13 +199,24 @@ impl<'a> Lexer<'a> {
             }
         }
         let size = expr.len() - 1;
-        // if size == 0 {
-        //     return Err(format!("empty parenthesis expression"));
-        // }
+        if size == 0 {
+            return Err(format!("empty parenthesis expression"));
+        }
+        self.discard(size);
+
+        // check for the closing parenthesis in the expression
         if expr.pop().unwrap() != Token::CloseParen {
             return Err(format!("expected ')'"));
         }
-        self.discard(size);
+        // check for a closing parenthesis in the main token stream
+        match self.next() {
+            Some(tok) => match tok {
+                Token::CloseParen => {},
+                _ => return Err(format!("expected ')'")),
+            }
+            None => {}
+        }
+
         Ok(Lexer::from(expr))
     }
 }
@@ -306,6 +329,7 @@ fn lex_num(chars: &mut Peekable<Chars>) -> Token {
     }
 }
 
+
 #[cfg(test)]
 mod test {
     use super::{eat_spaces, lex, lex_num, Lexer, Token};
@@ -328,6 +352,8 @@ mod test {
             Some(c) => assert_eq!(c, 'a'),
             None => panic!("expected 'a'"),
         }
+        let mut ch = "a".chars().peekable();
+        assert_eq!('a', eat_spaces(&mut ch).unwrap());
     }
 
     #[test]
