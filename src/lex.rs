@@ -4,12 +4,27 @@ use std::fmt;
 use std::iter::Peekable;
 use std::str::Chars;
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Token {
+    Op(char),
+    Int(i64),
+    Float(f64),
+
+    Equal,
+    OpenParen,
+    CloseParen,
+
+    End,
+    Invalid,
+}
+
 #[derive(Clone, PartialEq)]
 pub enum Op {
     Add,
     Sub,
     Mul,
     Div,
+    Exp,
     Invalid,
 }
 
@@ -25,41 +40,21 @@ pub fn lex(s: &str) -> Vec<Token> {
     }
 }
 
-impl fmt::Debug for Op {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match self {
-            Op::Add => write!(f, "Op::Add(+)"),
-            Op::Sub => write!(f, "Op::Sub(-)"),
-            Op::Mul => write!(f, "Op::Mul(*)"),
-            Op::Div => write!(f, "Op::Div(/)"),
-            Op::Invalid => write!(f, "Op::Invalid"),
-        }
-    }
-}
-
-fn get_op(c: char) -> Op {
-    match c {
-        '+' => Op::Add,
-        '-' => Op::Sub,
-        '*' => Op::Mul,
-        '/' => Op::Div,
-
-        // these are not supported yet
-        '^' => Op::Invalid,
-        '!' => Op::Invalid,
-        _ => Op::Invalid,
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Token {
-    OpenParen,
-    CloseParen,
-    Op(char),
-    Int(i64),
-    Float(f64),
-    End,
-    Invalid,
+fn next_token<'b>(chars: &'b mut Peekable<Chars>) -> Token {
+    let tok = match eat_spaces(chars) {
+        Some(c) => match c {
+            '(' => Token::OpenParen,
+            ')' => Token::CloseParen,
+            '0'..='9' | '.' => return lex_num(chars),
+            '-' | '+' | '*' | '/' | '^' => Token::Op(c),
+            // '!' => Token::Invalid, // TODO: factorial
+            _ => return Token::Invalid,
+        },
+        // None => return Token::End,
+        None => return Token::Invalid,
+    };
+    chars.next();
+    tok
 }
 
 pub struct Lexer<'a> {
@@ -98,10 +93,12 @@ impl<'a> Lexer<'a> {
         let mut next: Token;
         for _ in len..n {
             next = next_token(&mut self.chars);
+            if next == Token::Invalid {
+                return Token::End;
+            }
             self.buf.push(next);
-            match next {
-                Token::End | Token::Invalid => return Token::End,
-                _ => {}
+            if next == Token::End {
+                return next;
             }
         }
         next = next_token(&mut self.chars);
@@ -125,13 +122,16 @@ impl<'a> Lexer<'a> {
 
     pub fn as_vec(&self) -> Vec<Token> {
         let mut chars = self.chars.clone();
-        let mut v = vec![];
 
+        let mut v = vec![];
         v.extend(&self.buf);
         loop {
             let t = next_token(&mut chars);
+            if t == Token::Invalid {
+                break v;
+            }
             v.push(t);
-            if t == Token::End || t == Token::Invalid {
+            if t == Token::End {
                 break v;
             }
         }
@@ -143,7 +143,7 @@ impl<'a> Lexer<'a> {
         } else {
             match self.clone().next() {
                 Some(t) => t == Token::End,
-                None => false,
+                None => true,
             }
         }
     }
@@ -177,9 +177,9 @@ impl<'a> Lexer<'a> {
             }
         }
         let size = expr.len() - 1;
-        if size == 0 {
-            return Err(format!("empty parenthesis expression"));
-        }
+        // if size == 0 {
+        //     return Err(format!("empty parenthesis expression"));
+        // }
         if expr.pop().unwrap() != Token::CloseParen {
             return Err(format!("expected ')'"));
         }
@@ -188,7 +188,7 @@ impl<'a> Lexer<'a> {
     }
 }
 
-impl<'a> Iterator for Lexer<'a> {
+impl Iterator for Lexer<'_> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -196,10 +196,8 @@ impl<'a> Iterator for Lexer<'a> {
             return Some(self.buf.remove(0));
         }
         let tok = next_token(&mut self.chars);
-        // Some(tok)
-
         match tok {
-            Token::Invalid => None,
+            Token::End | Token::Invalid => None,
             _ => Some(tok),
         }
     }
@@ -224,30 +222,68 @@ impl<'a> fmt::Display for Lexer<'a> {
     }
 }
 
-fn next_token<'b>(chars: &'b mut Peekable<Chars>) -> Token {
-    let tok = match eat_spaces(chars) {
-        Some(c) => match c {
-            '(' => Token::OpenParen,
-            ')' => Token::CloseParen,
-            '0'..='9' | '.' => return lex_num(chars),
-            '-' | '+' | '*' | '/' | '^' => Token::Op(c),
-            '\0' => Token::End,
-            _ => Token::Invalid,
-        },
-        None => return Token::Invalid,
-    };
-    chars.next();
-    tok
+// impl fmt::Debug for Token {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         match self {
+//             Token::Int(i) => write!(f, "{}", i),
+//             Token::Float(fl) => write!(f, "{}", fl),
+//             Token::OpenParen => write!(f, "("),
+//             Token::CloseParen => write!(f, ")"),
+//             Token::Op(c) => write!(f, "{}", c),
+//         }
+//     }
+// }
+
+impl fmt::Debug for Op {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match self {
+            Op::Add => write!(f, "Op::Add(+)"),
+            Op::Sub => write!(f, "Op::Sub(-)"),
+            Op::Mul => write!(f, "Op::Mul(*)"),
+            Op::Div => write!(f, "Op::Div(/)"),
+            Op::Exp => write!(f, "Op::Exp(^)"),
+            Op::Invalid => write!(f, "Op::Invalid"),
+        }
+    }
+}
+
+fn get_op(c: char) -> Op {
+    match c {
+        '+' => Op::Add,
+        '-' => Op::Sub,
+        '*' => Op::Mul,
+        '/' => Op::Div,
+        '^' => Op::Exp,
+
+        // these are not supported yet
+        '!' => Op::Invalid,
+        _ => Op::Invalid,
+    }
+}
+
+impl Op {
+    fn as_char(self) -> char {
+        match self {
+            Op::Add => '+',
+            Op::Sub => '-',
+            Op::Mul => '*',
+            Op::Div => '/',
+            Op::Exp => '^',
+            Op::Invalid => '0',
+        }
+    }
 }
 
 fn eat_spaces<'a>(chars: &'a mut Peekable<Chars>) -> Option<char> {
     loop {
         match chars.peek() {
-            Some(c) if *c == '\0' => break Some(*c),
-            Some(c) if *c != ' ' && *c != '\n' && *c != '\t' => break Some(*c),
-            Some(..) => chars.next(),
+            Some(&c) => match c {
+                ' ' | '\n' | '\t' => {}
+                _ => break Some(c),
+            },
             None => break None,
-        };
+        }
+        chars.next();
     }
 }
 
@@ -344,6 +380,10 @@ mod test {
                 _ => panic!("tokens should be the same"),
             }
         }
+        // let v = Lexer::new("3/(3/4/5)/6").as_vec();
+        // println!("{:?}", v);
+        // assert_eq!(v.len(), 12);
+        // assert_eq!(v[0], Token::Int(3));
     }
 
     #[test]
@@ -368,6 +408,18 @@ mod test {
         match l.peek().clone() {
             Token::Int(n) => assert_eq!(n, 1),
             _ => panic!("expected number one"),
+        }
+
+        let l = Lexer::new("1 + 1 + 1");
+        for t in l {
+            match t {
+                Token::Int(1) | Token::Op('+') | Token::End => {}
+                Token::Invalid => {
+                    println!("invalid");
+                    break;
+                }
+                _ => panic!("got wrong token, {:?}", t),
+            }
         }
     }
 }

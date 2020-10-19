@@ -97,10 +97,6 @@ impl Ast {
         ast.grouped = true;
         ast
     }
-
-    pub fn mark_as_grouped(&mut self) {
-        self.grouped = true;
-    }
 }
 
 impl<'a> ops::Add<&'a Ast> for Ast {
@@ -131,10 +127,28 @@ impl<'a> ops::Div<&'a Ast> for Ast {
     }
 }
 
+fn _format(ast: &Ast, f: &mut fmt::Formatter) -> fmt::Result {
+    let len = ast.children.len();
+    write!(f, "Ast({:?}: [", ast.tok)?;
+    if len > 0 {
+        for i in 0..(len - 1) {
+            write!(f, "{:?}, ", ast.children[i].tok)?;
+        }
+        write!(f, "{:?}])", ast.children[len - 1].tok)
+    } else {
+        write!(f, "])")
+    }
+}
+
 impl fmt::Display for Ast {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let len = self.children.len();
+        _format(self, f)
+    }
+}
 
+impl fmt::Debug for Ast {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let len = self.children.len();
         write!(f, "Ast({:?}: [", self.tok)?;
         if len > 0 {
             for i in 0..(len - 1) {

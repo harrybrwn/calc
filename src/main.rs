@@ -1,7 +1,7 @@
 use std::env;
 use std::io::{self, Error, ErrorKind, Write};
 
-use calc::{ast::eval, parser::parse};
+use calc::exec;
 
 fn interpreter() -> Result<(), Error> {
     let stdin = io::stdin();
@@ -17,8 +17,8 @@ fn interpreter() -> Result<(), Error> {
         if s.as_bytes()[0] as char == 'q' || s == "q" || s == "quit" || s == "exit" {
             return Ok(());
         }
-        match parse(s.as_str()) {
-            Ok(ast) => println!("{}", eval(&ast)),
+        match exec(s.as_str()) {
+            Ok(res) => println!("{}", res),
             Err(msg) => println!("Error: {}", msg),
         }
         s.clear()
@@ -27,14 +27,12 @@ fn interpreter() -> Result<(), Error> {
 
 fn main() -> Result<(), Error> {
     let args = env::args();
-
-    if args.len() >= 2 {
-        let exp = args.last().unwrap();
-        match parse(exp.as_str()) {
-            Ok(ast) => Ok(println!("{}", eval(&ast))),
-            Err(msg) => Err(Error::new(ErrorKind::Other, msg)),
-        }
-    } else {
-        interpreter()
+    if args.len() == 1 {
+        return interpreter();
+    }
+    let exp = args.last().unwrap();
+    match exec(exp.as_str()) {
+        Ok(res) => Ok(println!("{}", res)),
+        Err(msg) => Err(Error::new(ErrorKind::Other, msg)),
     }
 }
