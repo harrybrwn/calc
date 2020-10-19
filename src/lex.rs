@@ -21,7 +21,8 @@ pub enum Token {
     OpenParen,
     CloseParen,
 
-    Assign, // TODO: add assignment support
+    Func,   // TODO: add functions
+    Assign, // TODO: add assignment support ("let name = ...")
     Equal,  // TODO: a single equal sign like real math
 
     End,
@@ -268,39 +269,36 @@ impl Op {
             Op::Invalid => '0',
         }
     }
+
+    fn presidence() -> i8 {
+        0
+    }
 }
 
 fn eat_spaces<'a>(chars: &'a mut Peekable<Chars>) -> Option<char> {
-    loop {
-        match chars.peek() {
-            Some(&c) => match c {
-                ' ' | '\n' | '\t' => {}
-                _ => break Some(c),
-            },
-            None => break None,
+    while let Some(&c) = chars.peek() {
+        match c {
+            ' ' | '\n' | '\t' => {}
+            _ => return Some(c),
         }
         chars.next();
     }
+    None
 }
 
 fn lex_num(chars: &mut Peekable<Chars>) -> Token {
     let mut s = String::with_capacity(16);
     let mut isfloat = false;
 
-    loop {
-        let c = match chars.peek() {
-            Some(&c) => c,
-            None => break,
-        };
+    while let Some(&c) = chars.peek() {
         if c == '.' {
             isfloat = true;
-        } else if c < '0' || c > '9' {
+        } else if !c.is_digit(10) {
             break;
         }
         s.push(c);
         chars.next();
     }
-
     if isfloat {
         Token::Float(s.parse::<f64>().unwrap())
     } else {
