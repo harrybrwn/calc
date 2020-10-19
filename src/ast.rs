@@ -80,25 +80,29 @@ impl Ast {
     }
 
     pub fn push(&mut self, ast: Ast) {
-        match (self.tok, ast.tok) {
-            (Token::Modulus, Token::Op(r)) if !ast.grouped => match r {
-                '*' | '/' => {
-                    self.children.push(ast);
-                    self.rotate_left();
-                    return;
-                },
-                _ => {},
-            }
-            (Token::Op(l), Token::Op(r)) if !ast.grouped => match (l, r) {
-                // for any combination of div and mul rotate left
-                ('/', '/') | ('*', '*') | ('/', '*') | ('*', '/') | ('^', '/') | ('^', '*') => {
+        if !ast.grouped {
+            match (self.tok, ast.tok) {
+                (Token::Modulus, Token::Modulus)
+                | (Token::Op('*'), Token::Modulus)
+                | (Token::Op('/'), Token::Modulus)
+                | (Token::Op('^'), Token::Modulus)
+                | (Token::Modulus, Token::Op('*'))
+                | (Token::Modulus, Token::Op('/')) => {
                     self.children.push(ast);
                     self.rotate_left();
                     return;
                 }
-                _ => {},
-            },
-            _ => {},
+                (Token::Op(l), Token::Op(r)) => match (l, r) {
+                    // for any combination of div and mul rotate left
+                    ('/', '/') | ('*', '*') | ('/', '*') | ('*', '/') | ('^', '/') | ('^', '*') => {
+                        self.children.push(ast);
+                        self.rotate_left();
+                        return;
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
         }
         self.children.push(ast);
     }

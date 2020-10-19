@@ -21,7 +21,10 @@ pub enum Token {
     OpenParen,
     CloseParen,
 
-    Modulus, // TODO: implement modulus as a keywork 4 mod 3
+    Modulus,
+    Factorial, // TODO:
+    Negation, // TODO:
+
     Func,   // TODO: add functions
     Assign, // TODO: add assignment support ("let name = ...")
     Equal,  // TODO: a single equal sign like real math f = 2*x
@@ -59,14 +62,18 @@ fn next_token<'b>(chars: &'b mut Peekable<Chars>) -> Token {
             ')' => Token::CloseParen,
             '0'..='9' | '.' => return lex_num(chars),
             '-' | '+' | '*' | '/' | '^' => Token::Op(c),
-            // '!' => Token::Invalid, // TODO: factorial
+            '!' => Token::Factorial,
+            '¬' => Token::Negation, // this might make things hard
             'a'..='z' => {
+                // TODO: write a trie to parse keywords
                 let key = "mod".chars();
                 for ch in key {
                     if let Some(&peeked) = chars.peek() {
                         if ch != peeked {
                             return Token::Invalid;
                         }
+                        // BUG: if this is not a 'mod' keyword
+                        // then we are loosing characters
                         chars.next();
                     }
                 }
@@ -79,8 +86,10 @@ fn next_token<'b>(chars: &'b mut Peekable<Chars>) -> Token {
     chars.next();
     tok
 }
+
 pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
+    index: usize,
     buf: Vec<Token>,
 }
 
@@ -89,6 +98,7 @@ impl<'a> Lexer<'a> {
         Self {
             chars: text.chars().peekable(),
             buf: vec![],
+            index: 0,
         }
     }
 
@@ -96,6 +106,7 @@ impl<'a> Lexer<'a> {
         return Self {
             chars: "".chars().peekable(),
             buf: toks,
+            index: 0,
         };
     }
 
@@ -240,6 +251,7 @@ impl Clone for Lexer<'_> {
         Self {
             buf: self.buf.clone(),
             chars: self.chars.clone(),
+            index: 0,
         }
     }
 }
