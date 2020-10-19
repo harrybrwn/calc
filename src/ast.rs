@@ -6,6 +6,7 @@ use crate::lex::Token;
 pub struct Ast {
     pub tok: Token,
     pub children: Vec<Ast>,
+    grouped: bool,
 }
 
 pub fn eval(ast: &Ast) -> f64 {
@@ -39,6 +40,7 @@ impl Clone for Ast {
         Self {
             tok: self.tok,
             children: self.children.clone(),
+            grouped: self.grouped,
         }
     }
 }
@@ -48,6 +50,7 @@ impl Ast {
         Self {
             tok: t,
             children: vec![],
+            grouped: false,
         }
     }
 
@@ -61,10 +64,14 @@ impl Ast {
 
     pub fn push(&mut self, ast: Ast) {
         match (self.tok, ast.tok) {
-            (Token::Op('/'), Token::Op('/')) => {
-                self.children.push(ast);
-                self.rotate_left();
-            }
+            (Token::Op(l), Token::Op(r)) if !ast.grouped => match (l, r) {
+                // for any combination of div and mul rotate left
+                ('/', '/') | ('*', '*') | ('/', '*') | ('*', '/') => {
+                    self.children.push(ast);
+                    self.rotate_left();
+                }
+                _ => self.children.push(ast),
+            },
             _ => self.children.push(ast),
         }
     }
@@ -83,6 +90,16 @@ impl Ast {
         );
         self.children[1] = self.children[1].children[1].clone();
         self.tok = newroot;
+    }
+
+    pub fn as_grouped(&self) -> Self {
+        let mut ast = self.clone();
+        ast.grouped = true;
+        ast
+    }
+
+    pub fn mark_as_grouped(&mut self) {
+        self.grouped = true;
     }
 }
 
