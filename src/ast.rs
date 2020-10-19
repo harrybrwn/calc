@@ -1,7 +1,9 @@
 use std::fmt;
 use std::ops;
+use std::str;
 
 use crate::lex::Token;
+use crate::parser;
 
 pub struct Ast {
     pub tok: Token,
@@ -9,6 +11,7 @@ pub struct Ast {
     grouped: bool,
 }
 
+#[doc(hidden)]
 pub fn eval(ast: &Ast) -> f64 {
     if ast.children.len() == 1 {
         return match ast.tok {
@@ -32,6 +35,15 @@ pub fn eval(ast: &Ast) -> f64 {
         Token::Int(n) => n as f64,
         Token::Float(n) => n,
         _ => 0.0,
+    }
+}
+
+impl str::FromStr for Ast {
+    type Err = String;
+
+    /// Constructs an expression by parsing a string.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parser::parse(s)
     }
 }
 

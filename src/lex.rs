@@ -10,9 +10,19 @@ pub enum Token {
     Int(i64),
     Float(f64),
 
-    Equal,
+    // TODO: add a counter to the paren tokens
+    // i.e. 'OpenParen(i32)' so when I need to
+    // match them up I can just match them by
+    // their internal counter
+    //
+    // I would need the `next_token` function to be
+    // a lot smarter (maybe just get rid of it and put
+    // it on the Lexer).
     OpenParen,
     CloseParen,
+
+    Assign, // TODO: add assignment support
+    Equal,  // TODO: a single equal sign like real math
 
     End,
     Invalid,
@@ -50,7 +60,6 @@ fn next_token<'b>(chars: &'b mut Peekable<Chars>) -> Token {
             // '!' => Token::Invalid, // TODO: factorial
             _ => return Token::Invalid,
         },
-        // None => return Token::End,
         None => return Token::Invalid,
     };
     chars.next();
@@ -190,7 +199,6 @@ impl<'a> Lexer<'a> {
 
 impl Iterator for Lexer<'_> {
     type Item = Token;
-
     fn next(&mut self) -> Option<Self::Item> {
         if self.buf.len() > 0 {
             return Some(self.buf.remove(0));
@@ -221,18 +229,6 @@ impl<'a> fmt::Display for Lexer<'a> {
         }
     }
 }
-
-// impl fmt::Debug for Token {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         match self {
-//             Token::Int(i) => write!(f, "{}", i),
-//             Token::Float(fl) => write!(f, "{}", fl),
-//             Token::OpenParen => write!(f, "("),
-//             Token::CloseParen => write!(f, ")"),
-//             Token::Op(c) => write!(f, "{}", c),
-//         }
-//     }
-// }
 
 impl fmt::Debug for Op {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
@@ -287,12 +283,15 @@ fn eat_spaces<'a>(chars: &'a mut Peekable<Chars>) -> Option<char> {
     }
 }
 
-fn lex_num<'a>(chars: &mut Peekable<Chars<'a>>) -> Token {
-    let mut s = String::with_capacity(6);
+fn lex_num(chars: &mut Peekable<Chars>) -> Token {
+    let mut s = String::with_capacity(16);
     let mut isfloat = false;
 
     loop {
-        let c = *chars.peek().unwrap_or(&'\0');
+        let c = match chars.peek() {
+            Some(&c) => c,
+            None => break,
+        };
         if c == '.' {
             isfloat = true;
         } else if c < '0' || c > '9' {
@@ -311,7 +310,18 @@ fn lex_num<'a>(chars: &mut Peekable<Chars<'a>>) -> Token {
 
 #[cfg(test)]
 mod test {
-    use super::{eat_spaces, lex, Lexer, Token};
+    use super::{eat_spaces, lex, lex_num, Lexer, Token};
+
+    #[test]
+    fn test_lex_num() {
+        let mut ch = "123".chars().peekable();
+        let res = match lex_num(&mut ch) {
+            Token::Int(i) => i,
+            Token::Invalid => panic!("should not get invalid token for \"123\""),
+            _ => 0,
+        };
+        assert_eq!(res, 123);
+    }
 
     #[test]
     fn test_eat_spaces() {
@@ -322,7 +332,6 @@ mod test {
         }
     }
 
-    // #[ignore]
     #[test]
     fn test_both_lexers() {
         let s = "1 + (3 / 2) * 4";
@@ -380,10 +389,6 @@ mod test {
                 _ => panic!("tokens should be the same"),
             }
         }
-        // let v = Lexer::new("3/(3/4/5)/6").as_vec();
-        // println!("{:?}", v);
-        // assert_eq!(v.len(), 12);
-        // assert_eq!(v[0], Token::Int(3));
     }
 
     #[test]
@@ -394,7 +399,6 @@ mod test {
         assert_eq!(l.look_ahead(0), p);
         assert_eq!(l.look_ahead(1), Token::Op('+'));
         assert_eq!(l.look_ahead(2), Token::Int(1));
-
         match l.peek().clone() {
             Token::Int(n) => assert_eq!(n, 1),
             _ => panic!("expected the number one"),
@@ -409,7 +413,6 @@ mod test {
             Token::Int(n) => assert_eq!(n, 1),
             _ => panic!("expected number one"),
         }
-
         let l = Lexer::new("1 + 1 + 1");
         for t in l {
             match t {
