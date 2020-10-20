@@ -62,7 +62,7 @@ impl str::FromStr for Ast {
     }
 }
 
-impl Clone for Ast {
+impl<'a> Clone for Ast {
     fn clone(&self) -> Self {
         Self {
             tok: self.tok,
@@ -72,7 +72,7 @@ impl Clone for Ast {
     }
 }
 
-impl Ast {
+impl<'a> Ast {
     pub fn new(t: Token) -> Self {
         Self {
             tok: t,
@@ -90,39 +90,44 @@ impl Ast {
     }
 
     pub fn push(&mut self, ast: Ast) {
-        if !ast.grouped && self.children.len() > 0 {
-            match (self.tok, ast.tok) {
-                (Token::Modulus, Token::Modulus)
-                | (Token::Op('*'), Token::Modulus)
-                | (Token::Op('/'), Token::Modulus)
-                | (Token::Op('^'), Token::Modulus)
-                | (Token::Modulus, Token::Op('*'))
-                | (Token::Modulus, Token::Op('/')) => {
-                    self.children.push(ast);
-                    self.rotate_left();
-                    return;
-                }
-                (Token::Op('%'), Token::Op(c)) => match c {
-                    '*' | '/' => {
-                        self.children.push(ast);
-                        self.rotate_left();
-                        return;
-                    }
-                    _ => {}
-                },
-                (Token::Op(l), Token::Op(r)) => match (l, r) {
-                    // for any combination of div and mul rotate left
-                    ('/', '/') | ('*', '*') | ('/', '*') | ('*', '/') | ('^', '/') | ('^', '*') => {
-                        self.children.push(ast);
-                        self.rotate_left();
-                        return;
-                    }
-                    _ => {}
-                },
-                _ => {}
-            }
-        }
+        use Token::{Modulus, Op};
+        let grouped = ast.grouped;
+        let tok = ast.tok;
+
         self.children.push(ast);
+
+        // if the ast has been marked as
+        // a group then we don't want to
+        // break that group
+        if grouped {
+            return;
+        }
+        // we only do rotation if we
+        // already have a left child
+        if self.children.len() == 0 {
+            return;
+        }
+
+        match (self.tok, tok) {
+            (Op('+'), ..) | (Op('-'), ..) | (.., Op('+')) | (.., Op('-')) => {}
+            (Op('/'), Op('/'))
+            | (Op('/'), Modulus)
+            | (Op('/'), Op('*'))
+            | (Op('*'), Op('*'))
+            | (Op('*'), Op('/'))
+            | (Op('*'), Modulus)
+            | (Op('^'), Op('*'))
+            | (Op('^'), Op('/'))
+            | (Op('^'), Modulus)
+            | (Op('%'), Op('*'))
+            | (Op('%'), Op('/'))
+            | (Modulus, Modulus)
+            | (Modulus, Op('*'))
+            | (Modulus, Op('/')) => {
+                self.rotate_left();
+            }
+            _ => {}
+        }
     }
 
     fn rotate_left(&mut self) {
@@ -189,13 +194,13 @@ fn _format(ast: &Ast, f: &mut fmt::Formatter) -> fmt::Result {
     }
 }
 
-impl fmt::Display for Ast {
+impl<'a> fmt::Display for Ast {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         _format(self, f)
     }
 }
 
-impl fmt::Debug for Ast {
+impl<'a> fmt::Debug for Ast {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let len = self.children.len();
         write!(f, "Ast({:?}: [", self.tok)?;

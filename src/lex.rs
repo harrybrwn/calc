@@ -7,7 +7,7 @@ use std::str::Chars;
 // extern crate radix_trie;
 // use radix_trie::Trie;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Token {
     Op(char),
     Int(i64),
@@ -74,8 +74,8 @@ pub fn lex(s: &str) -> Vec<Token> {
 fn next_token<'b>(chars: &mut Peekable<Chars>) -> (Token, usize) {
     let (tok, inc) = match eat_spaces(chars) {
         (Some(c), i) => match c {
-            '(' => (Token::OpenParen, i),
-            ')' => (Token::CloseParen, i),
+            '(' => (Token::OpenParen, i + 1),
+            ')' => (Token::CloseParen, i + 1),
             '0'..='9' | '.' => {
                 let (n, adv) = lex_num(chars);
                 return (n, adv + i);
@@ -100,7 +100,11 @@ fn next_token<'b>(chars: &mut Peekable<Chars>) -> (Token, usize) {
                         _ => continue,
                     };
                     if let Some(&c) = chars.peek() {
+                        // there should be a space after keywords
+                        // otherwise invalide result
                         if c != ' ' {
+                            // TODO: return a Token::Error that holads
+                            // an error message or return a Result<Token, &str>
                             return (Token::Invalid, keyword.1);
                         }
                     }
@@ -112,8 +116,9 @@ fn next_token<'b>(chars: &mut Peekable<Chars>) -> (Token, usize) {
         },
         (None, ..) => return (Token::End, 0),
     };
-    chars.next(); // skip what we just peeked
+    chars.next();
     (tok, inc)
+    // (tok, 0)
 }
 
 pub struct Lexer<'a> {
@@ -158,9 +163,24 @@ impl<'a> Lexer<'a> {
 
     pub fn error_at_current(&self) -> Vec<String> {
         let mut v = vec![];
-        let wrap = 3;
+        let max = self.raw.clone().trim().len();
+        let wrap = max - 1;
+        // let wrap = if self.index >= max {
+        //     max
+        // } else {
+        //     max - self.index
+        // };
+        // let wrap = if self.index < max - 3 {
+        //     3
+        // } else {
+        //     self.index - max
+        // };
+
+        // let wrap = if self.index >= max { 0 } else { 3 };
         let mut s = String::new();
-        let code = &self.raw[self.index - wrap..self.index + wrap];
+        let raw = self.raw.clone();
+        // let code = &raw[self.index - wrap..self.index + wrap];
+        let code = &raw;
         s.extend(code.chars());
         v.push(s.clone());
         s.clear();
@@ -175,25 +195,19 @@ impl<'a> Lexer<'a> {
         if self.buf.len() == 0 {
             let (next, i) = next_token(&mut self.chars);
 
-            // println!(
-            //     "Lexer::peek => {} {:?}",
-            //     &self.raw.clone()[self.index..self.index + 1],
-            //     next
-            // );
-
-            // println!("Lexer::peek => {:?}", next);
-            // if i < self.raw.len() {
+            // let r = self.raw.clone();
+            // if r.len() > self.index + 1 {
             //     println!(
-            //         "\"{}\" advance({}) peek()=>{:?} {}",
-            //         self.raw,
-            //         i,
+            //         "\"{}\" -- Lexer::peek => '{}' {:?} (n:{})",
+            //         r,
+            //         &r[self.index - 0..self.index + 2],
             //         next,
-            //         self.raw.as_bytes()[i] as char,
+            //         i
             //     );
             // }
+
             self.buf.push(next);
             self.index += i;
-            // self.buf.push(next_token(&mut self.chars));
         }
         self.buf[0]
     }
@@ -243,12 +257,9 @@ impl<'a> Lexer<'a> {
         v.extend(&self.buf);
         loop {
             let (t, _) = next_token(&mut chars);
-            if t == Token::Invalid {
-                break v;
-            }
-            v.push(t);
-            if t == Token::End {
-                break v;
+            match t {
+                Token::Invalid | Token::End => break v,
+                _ => v.push(t),
             }
         }
     }
@@ -314,22 +325,24 @@ impl<'a> Lexer<'a> {
     }
 }
 
-impl Iterator for Lexer<'_> {
+impl<'a> Iterator for Lexer<'a> {
     type Item = Token;
     fn next(&mut self) -> Option<Self::Item> {
         if self.buf.len() > 0 {
             return Some(self.buf.remove(0));
         }
         let (tok, i) = next_token(&mut self.chars);
-        self.index += i;
         match tok {
             Token::End | Token::Invalid => None,
-            _ => Some(tok),
+            _ => {
+                self.index += i;
+                Some(tok)
+            }
         }
     }
 }
 
-impl Clone for Lexer<'_> {
+impl<'a> Clone for Lexer<'a> {
     fn clone(&self) -> Self {
         Self {
             buf: self.buf.clone(),
@@ -353,7 +366,7 @@ fn eat_spaces<'a>(chars: &'a mut Peekable<Chars>) -> (Option<char>, usize) {
     (None, i)
 }
 
-fn lex_num(chars: &mut Peekable<Chars>) -> (Token, usize) {
+fn lex_num<'a>(chars: &mut Peekable<Chars>) -> (Token, usize) {
     let mut s = String::with_capacity(16);
     let mut isfloat = false;
 
@@ -379,6 +392,28 @@ impl<'a> fmt::Display for Lexer<'a> {
             write!(f, "Lexer{{..}}")
         } else {
             write!(f, "Lexer{{{:?}}}", self.buf)
+        }
+    }
+}
+
+impl<'a> Copy for Token {}
+
+impl<'a> Clone for Token {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'a> ToString for Token {
+    fn to_string(&self) -> String {
+        match self {
+            Token::OpenParen => String::from("("),
+            Token::CloseParen => String::from(")"),
+            Token::Modulus => String::from("mod"),
+            Token::Int(i) => format!("{}", i),
+            Token::Float(f) => format!("{}", f),
+            Token::Op(c) => format!("{}", c),
+            _ => String::new(),
         }
     }
 }

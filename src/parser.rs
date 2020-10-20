@@ -16,6 +16,8 @@ pub fn parse(text: &str) -> AstRes {
 }
 
 /*
+ * < assignment > ::= 'let' < var > '=' < expression >
+ *
  * < expression > ::= < term > + < expression > |
  *                    < term > - < expression > |
  *                    < term >
@@ -43,11 +45,7 @@ fn expr(toks: &mut Lexer) -> AstRes {
         Op(c) => match c {
             '+' | '-' => Ast::new(Op(c)),
             _ => {
-                // let errs = toks.error_at_current();
-                // let msg = errs.join("\n");
-                // println!("{}", msg);
-                // return Err(format!("invalid operation\n{}", msg.as_str()));
-                return Err(format!("invalid operation"));
+                return Err(format!("invalid operation: '{}'", c));
             }
         },
         _ => return Ok(head),
@@ -86,27 +84,23 @@ fn term(toks: &mut Lexer) -> AstRes {
                     // then the tokenizer is broken
                     None => return Ok(res),
                 };
-                let percent = match toks.peek() {
-                    // BUG: Grammar error here
-                    //
-                    // "3 / 23% of 55 / 23" will break bc
-                    // it grabes the second '/' wrong.
-                    // This is the result we want "3 / (23% of 55) / 23"
-                    Token::Of => {
-                        toks.next(); // skip the of
-                        let right = match term(toks) {
-                            Ok(ast) => ast,
-                            Err(msg) => return Err(msg),
-                        };
-                        Ok(Ast::from(op, vec![res, right]))
+                match toks.peek() {
+                    Token::Of => match toks.next() {
+                        // setting root as the '%' operator
+                        Some(..) => Ast::new(op),
+                        None => return Err(format!("unexpected end to token stream")),
+                    },
+                    OpenParen | CloseParen => {
+                        return Err(format!("invalid parenthesis '{:?}'", toks.peek()))
                     }
-                    Token::OpenParen | Token::CloseParen => {
-                        return Err(format!("invalid token '{:?}'", toks.peek()))
-                    }
-                    Token::Invalid => Err(format!("got invalid token")),
-                    _ => Ok(Ast::from(op, vec![res])),
-                };
-                return percent;
+                    Token::Invalid => return Err(format!("got invalid token")),
+                    Token::Op(..) => match toks.next() {
+                        // setting root as an operator
+                        Some(tok) => Ast::from(tok, vec![Ast::new(op)]),
+                        None => return Err(format!("unexpected end of token stream")),
+                    },
+                    _ => return Ok(Ast::from(op, vec![res])),
+                }
             }
             '+' | '-' => return Ok(res),
             _ => return Err(format!("invalid operation '{}'", c)),
@@ -114,7 +108,14 @@ fn term(toks: &mut Lexer) -> AstRes {
         Modulus => Ast::new(toks.next().unwrap()),
         _ => return Err(format!("unexpected input")),
     };
-    root.push(res);
+    // This catches a weird edge case where we have '%' followed by
+    // some operator. This is a hack, better grammar will probably
+    // fix this.
+    if root.children.len() == 1 && root.children[0].tok == Op('%') {
+        root.children[0].push(res);
+    } else {
+        root.push(res);
+    }
     if let Ok(rhs) = term(toks) {
         root.push(rhs);
     }
@@ -130,54 +131,41 @@ fn factor(toks: &mut Lexer) -> AstRes {
         },
         Op('-') => Ok(Ast::from(toks.next().unwrap(), vec![factor(toks)?])),
         Invalid => Err(format!("invalid input")),
-        _ => Err(format!("invalid factor '{:?}'", toks.peek())),
-    }
-}
-
-fn extract_from_parens(toks: &mut Vec<Token>) -> Result<Vec<Token>, String> {
-    let mut expr = vec![];
-    let mut paren = 0;
-    for t in toks.clone() {
-        expr.push(t);
-        match t {
-            CloseParen => {
-                if paren == 0 {
-                    break;
-                } else {
-                    paren -= 1;
-                }
-            }
-            OpenParen => {
-                paren += 1;
-            }
-            _ => {}
+        _ => {
+            return Err(format!("invalid token '{}'", toks.peek().to_string(),));
         }
     }
-    Ok(expr)
-}
-
-fn until_oneof<'a>(tokens: &'a mut Vec<Token>, delim: &[Token]) -> Vec<Token> {
-    let mut v = vec![];
-    for token in tokens {
-        v.push(*token);
-        for t in delim {
-            if token == t {
-                return v;
-            }
-        }
-    }
-    v
 }
 
 #[cfg(test)]
 mod test {
     use super::parse;
-    use super::{expr, factor, term, until_oneof};
+    use super::{expr, factor, term};
     use crate::ast::eval;
     use crate::lex::{Lexer, Token, Token::Int};
 
     #[test]
-    fn test_parse_keywords() {
+    fn test_errors() {
+        match parse("30 + )8") {
+            Ok(..) => panic!("expected error"),
+            // Err(msg) => println!("error: {}", msg),
+            Err(..) => {}
+        }
+        match parse("30 ^* 8  ") {
+            Ok(..) => panic!("expected error"),
+            // Err(msg) => println!("error: {}", msg),
+            Err(..) => {}
+        }
+    }
+
+    #[test]
+    fn test_keywords() {
+        match parse("20%^2") {
+            Ok(ast) => {
+                assert_eq!(eval(&ast), (20. / 100. as f64).powf(2.));
+            }
+            Err(msg) => panic!(msg),
+        }
         match parse("4 mod 5") {
             Ok(ast) => {
                 assert_eq!(ast.tok, Token::Modulus);
@@ -198,7 +186,6 @@ mod test {
         }
         match parse("3 / 23% of 55 * 23") {
             Ok(ast) => {
-                // println!("{}", ast);
                 assert_eq!(eval(&ast), 3.0 / ((23. / 100.) * 55.) * 23.);
             }
             Err(msg) => panic!(msg),
@@ -245,6 +232,7 @@ mod test {
 
     #[test]
     fn test_parse() {
+        // println!("3/(3/4/5)/6");
         let t = match parse("3/(3/4/5)/6") {
             Ok(ast) => ast,
             Err(msg) => panic!(msg),
@@ -389,20 +377,5 @@ mod test {
             }
             Err(msg) => panic!(msg),
         }
-    }
-
-    #[test]
-    fn test_tokens_until() {
-        let mut v = vec![
-            Token::OpenParen,
-            Token::Int(4),
-            Token::Op('+'),
-            Token::Int(2),
-            Token::CloseParen,
-        ];
-        let r = until_oneof(&mut v, &[Token::Op('+')]);
-        assert_eq!(r[0], Token::OpenParen);
-        assert_eq!(r[1], Token::Int(4));
-        assert_eq!(r[2], Token::Op('+'));
     }
 }
