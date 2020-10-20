@@ -4,6 +4,9 @@ use std::fmt;
 use std::iter::Peekable;
 use std::str::Chars;
 
+// extern crate radix_trie;
+// use radix_trie::Trie;
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Token {
     Op(char),
@@ -21,13 +24,22 @@ pub enum Token {
     OpenParen,
     CloseParen,
 
+    Negation, // TODO: use ¬ or ~
+
     Modulus,
     Factorial, // TODO:
-    Negation, // TODO:
 
+    Of, // TODO: 10 % of 3
+
+    // TODO:
+    //      - sum
+    //      - sqrt
+    //      - log
     Func,   // TODO: add functions
     Assign, // TODO: add assignment support ("let name = ...")
     Equal,  // TODO: a single equal sign like real math f = 2*x
+
+    Ident, // Identifiers
 
     End,
     Invalid,
@@ -40,6 +52,10 @@ pub enum Op {
     Mul,
     Div,
     Exp,
+    Mod,
+    Fac, // Factorial
+    Percent,
+    Not,
     Invalid,
 }
 
@@ -47,7 +63,7 @@ pub fn lex(s: &str) -> Vec<Token> {
     let mut toks = vec![];
     let mut chars = s.chars().peekable();
     loop {
-        let next = next_token(&mut chars);
+        let (next, _) = next_token(&mut chars);
         match next {
             Token::End | Token::Invalid => break toks,
             _ => toks.push(next),
@@ -55,50 +71,66 @@ pub fn lex(s: &str) -> Vec<Token> {
     }
 }
 
-fn next_token<'b>(chars: &'b mut Peekable<Chars>) -> Token {
-    let tok = match eat_spaces(chars) {
-        Some(c) => match c {
-            '(' => Token::OpenParen,
-            ')' => Token::CloseParen,
-            '0'..='9' | '.' => return lex_num(chars),
-            '-' | '+' | '*' | '/' | '^' => Token::Op(c),
-            '!' => Token::Factorial,
-            '¬' => Token::Negation, // this might make things hard
+fn next_token<'b>(chars: &mut Peekable<Chars>) -> (Token, usize) {
+    let (tok, inc) = match eat_spaces(chars) {
+        (Some(c), i) => match c {
+            '(' => (Token::OpenParen, i),
+            ')' => (Token::CloseParen, i),
+            '0'..='9' | '.' => {
+                let (n, adv) = lex_num(chars);
+                return (n, adv + i);
+            }
+            '-' | '+' | '*' | '/' | '^' | '%' => (Token::Op(c), i + 1),
+            '!' => (Token::Factorial, i),
+            '¬' => (Token::Negation, i), // this might make things hard
+            '~' => (Token::Negation, i),
             'a'..='z' => {
-                // TODO: write a trie to parse keywords
-                let key = "mod".chars();
-                for ch in key {
-                    if let Some(&peeked) = chars.peek() {
-                        if ch != peeked {
-                            return Token::Invalid;
-                        }
-                        // BUG: if this is not a 'mod' keyword
-                        // then we are loosing characters
-                        chars.next();
+                // TODO: write a better way to tokenize keywords
+                let mut s = String::new();
+                let mut read = 0;
+                while let Some(c) = chars.next() {
+                    if c.is_digit(10) {
+                        return (Token::Invalid, i + read);
                     }
+                    s.push(c);
+                    read += 1;
+                    let keyword = match s.as_str() {
+                        "mod" => (Token::Modulus, i + read),
+                        "of" => (Token::Of, i + read + 1),
+                        _ => continue,
+                    };
+                    if let Some(&c) = chars.peek() {
+                        if c != ' ' {
+                            return (Token::Invalid, keyword.1);
+                        }
+                    }
+                    return keyword;
                 }
-                Token::Modulus
-            },
-            _ => return Token::Invalid,
+                (Token::Invalid, i + read)
+            }
+            _ => return (Token::Invalid, 0),
         },
-        None => return Token::Invalid,
+        (None, ..) => return (Token::End, 0),
     };
-    chars.next();
-    tok
+    chars.next(); // skip what we just peeked
+    (tok, inc)
 }
 
 pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
-    index: usize,
     buf: Vec<Token>,
+    index: usize,
+    raw: String,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(text: &'a str) -> Self {
+        let raw = String::from(text);
         Self {
             chars: text.chars().peekable(),
             buf: vec![],
             index: 0,
+            raw: raw,
         }
     }
 
@@ -107,12 +139,61 @@ impl<'a> Lexer<'a> {
             chars: "".chars().peekable(),
             buf: toks,
             index: 0,
+            raw: String::new(),
         };
+    }
+
+    fn new_empty() -> Self {
+        Self {
+            chars: "".chars().peekable(),
+            buf: vec![],
+            index: 0,
+            raw: String::new(),
+        }
+    }
+
+    pub fn get_index(self) -> usize {
+        self.index
+    }
+
+    pub fn error_at_current(&self) -> Vec<String> {
+        let mut v = vec![];
+        let wrap = 3;
+        let mut s = String::new();
+        let code = &self.raw[self.index - wrap..self.index + wrap];
+        s.extend(code.chars());
+        v.push(s.clone());
+        s.clear();
+
+        s.extend((0..wrap).map(|_| " ").collect::<String>().chars());
+        s.push('^');
+        v.push(s);
+        v
     }
 
     pub fn peek(&mut self) -> Token {
         if self.buf.len() == 0 {
-            self.buf.push(next_token(&mut self.chars));
+            let (next, i) = next_token(&mut self.chars);
+
+            // println!(
+            //     "Lexer::peek => {} {:?}",
+            //     &self.raw.clone()[self.index..self.index + 1],
+            //     next
+            // );
+
+            // println!("Lexer::peek => {:?}", next);
+            // if i < self.raw.len() {
+            //     println!(
+            //         "\"{}\" advance({}) peek()=>{:?} {}",
+            //         self.raw,
+            //         i,
+            //         next,
+            //         self.raw.as_bytes()[i] as char,
+            //     );
+            // }
+            self.buf.push(next);
+            self.index += i;
+            // self.buf.push(next_token(&mut self.chars));
         }
         self.buf[0]
     }
@@ -123,18 +204,20 @@ impl<'a> Lexer<'a> {
             return self.buf[n];
         }
 
-        let mut next: Token;
+        // let (mut next, ix): (Token, usize);
         for _ in len..n {
-            next = next_token(&mut self.chars);
+            let (next, ix) = next_token(&mut self.chars);
             if next == Token::Invalid {
                 return Token::End;
             }
+            self.index += ix;
             self.buf.push(next);
             if next == Token::End {
                 return next;
             }
         }
-        next = next_token(&mut self.chars);
+        let (next, ix) = next_token(&mut self.chars);
+        self.index += ix;
         self.buf.push(next);
         next
     }
@@ -159,7 +242,7 @@ impl<'a> Lexer<'a> {
         let mut v = vec![];
         v.extend(&self.buf);
         loop {
-            let t = next_token(&mut chars);
+            let (t, _) = next_token(&mut chars);
             if t == Token::Invalid {
                 break v;
             }
@@ -222,12 +305,11 @@ impl<'a> Lexer<'a> {
         // check for a closing parenthesis in the main token stream
         match self.next() {
             Some(tok) => match tok {
-                Token::CloseParen => {},
+                Token::CloseParen => {}
                 _ => return Err(format!("expected ')'")),
-            }
+            },
             None => {}
         }
-
         Ok(Lexer::from(expr))
     }
 }
@@ -238,7 +320,8 @@ impl Iterator for Lexer<'_> {
         if self.buf.len() > 0 {
             return Some(self.buf.remove(0));
         }
-        let tok = next_token(&mut self.chars);
+        let (tok, i) = next_token(&mut self.chars);
+        self.index += i;
         match tok {
             Token::End | Token::Invalid => None,
             _ => Some(tok),
@@ -251,8 +334,42 @@ impl Clone for Lexer<'_> {
         Self {
             buf: self.buf.clone(),
             chars: self.chars.clone(),
-            index: 0,
+            index: self.index,
+            raw: self.raw.clone(),
         }
+    }
+}
+
+fn eat_spaces<'a>(chars: &'a mut Peekable<Chars>) -> (Option<char>, usize) {
+    let mut i = 0;
+    while let Some(&c) = chars.peek() {
+        match c {
+            ' ' | '\n' | '\t' => {}
+            _ => return (Some(c), i),
+        }
+        chars.next();
+        i += 1;
+    }
+    (None, i)
+}
+
+fn lex_num(chars: &mut Peekable<Chars>) -> (Token, usize) {
+    let mut s = String::with_capacity(16);
+    let mut isfloat = false;
+
+    while let Some(&c) = chars.peek() {
+        if c == '.' {
+            isfloat = true;
+        } else if !c.is_digit(10) {
+            break;
+        }
+        s.push(c);
+        chars.next();
+    }
+    if isfloat {
+        (Token::Float(s.parse::<f64>().unwrap()), s.len())
+    } else {
+        (Token::Int(s.parse::<i64>().unwrap()), s.len())
     }
 }
 
@@ -269,12 +386,16 @@ impl<'a> fmt::Display for Lexer<'a> {
 impl fmt::Debug for Op {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match self {
-            Op::Add => write!(f, "Op::Add(+)"),
-            Op::Sub => write!(f, "Op::Sub(-)"),
-            Op::Mul => write!(f, "Op::Mul(*)"),
-            Op::Div => write!(f, "Op::Div(/)"),
-            Op::Exp => write!(f, "Op::Exp(^)"),
-            Op::Invalid => write!(f, "Op::Invalid"),
+            Op::Add => write!(f, "Add(+)"),
+            Op::Sub => write!(f, "Sub(-)"),
+            Op::Mul => write!(f, "Mul(*)"),
+            Op::Div => write!(f, "Div(/)"),
+            Op::Exp => write!(f, "Exp({})", self.as_str()),
+            Op::Mod => write!(f, "Mod({})", self.as_str()),
+            Op::Not => write!(f, "Not({})", self.as_str()),
+            Op::Fac => write!(f, "Fac(!)"),
+            Op::Percent => write!(f, "Percent(%)"),
+            Op::Invalid => write!(f, "Invalid"),
         }
     }
 }
@@ -286,22 +407,41 @@ fn get_op(c: char) -> Op {
         '*' => Op::Mul,
         '/' => Op::Div,
         '^' => Op::Exp,
-
-        // these are not supported yet
-        '!' => Op::Invalid,
+        '~' => Op::Not,
+        'm' => Op::Mod,
+        '!' => Op::Fac,
         _ => Op::Invalid,
     }
 }
 
 impl Op {
-    fn as_char(self) -> char {
+    fn as_char(&self) -> char {
         match self {
             Op::Add => '+',
             Op::Sub => '-',
             Op::Mul => '*',
             Op::Div => '/',
             Op::Exp => '^',
+            Op::Mod => 'm',
+            Op::Not => '~',
+            Op::Fac => '!',
+            Op::Percent => '%',
             Op::Invalid => '0',
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        match self {
+            Op::Add => "+",
+            Op::Sub => "-",
+            Op::Mul => "*",
+            Op::Div => "/",
+            Op::Exp => "^",
+            Op::Mod => "mod",
+            Op::Not => "~",
+            Op::Fac => "!",
+            Op::Percent => "%",
+            Op::Invalid => "<invalid>",
         }
     }
 
@@ -309,38 +449,6 @@ impl Op {
         0
     }
 }
-
-fn eat_spaces<'a>(chars: &'a mut Peekable<Chars>) -> Option<char> {
-    while let Some(&c) = chars.peek() {
-        match c {
-            ' ' | '\n' | '\t' => {}
-            _ => return Some(c),
-        }
-        chars.next();
-    }
-    None
-}
-
-fn lex_num(chars: &mut Peekable<Chars>) -> Token {
-    let mut s = String::with_capacity(16);
-    let mut isfloat = false;
-
-    while let Some(&c) = chars.peek() {
-        if c == '.' {
-            isfloat = true;
-        } else if !c.is_digit(10) {
-            break;
-        }
-        s.push(c);
-        chars.next();
-    }
-    if isfloat {
-        Token::Float(s.parse::<f64>().unwrap())
-    } else {
-        Token::Int(s.parse::<i64>().unwrap())
-    }
-}
-
 
 #[cfg(test)]
 mod test {
@@ -350,8 +458,8 @@ mod test {
     fn test_lex_num() {
         let mut ch = "123".chars().peekable();
         let res = match lex_num(&mut ch) {
-            Token::Int(i) => i,
-            Token::Invalid => panic!("should not get invalid token for \"123\""),
+            (Token::Int(i), ..) => i,
+            (Token::Invalid, ..) => panic!("should not get invalid token for \"123\""),
             _ => 0,
         };
         assert_eq!(res, 123);
@@ -361,11 +469,11 @@ mod test {
     fn test_eat_spaces() {
         let mut chars = "    a".chars().peekable();
         match eat_spaces(&mut chars) {
-            Some(c) => assert_eq!(c, 'a'),
-            None => panic!("expected 'a'"),
+            (Some(c), ..) => assert_eq!(c, 'a'),
+            (None, ..) => panic!("expected 'a'"),
         }
         let mut ch = "a".chars().peekable();
-        assert_eq!('a', eat_spaces(&mut ch).unwrap());
+        assert_eq!('a', eat_spaces(&mut ch).0.unwrap());
     }
 
     #[test]

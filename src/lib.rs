@@ -1,6 +1,7 @@
 mod ast;
 mod lex;
 mod parser;
+mod trie;
 
 /// Execute the code given as a raw string.
 ///

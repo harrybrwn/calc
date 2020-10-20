@@ -2,17 +2,8 @@
 
 use crate::ast::Ast;
 use crate::lex::{
-    Lexer,
-    Token,
-    Token::{
-        Op,
-        Int,
-        Float,
-        Modulus,
-        OpenParen,
-        CloseParen,
-        Invalid,
-    },
+    Lexer, Token,
+    Token::{CloseParen, Float, Int, Invalid, Modulus, Op, OpenParen},
 };
 
 type AstRes = Result<Ast, String>;
@@ -51,7 +42,13 @@ fn expr(toks: &mut Lexer) -> AstRes {
     let mut root = match toks.next().unwrap() {
         Op(c) => match c {
             '+' | '-' => Ast::new(Op(c)),
-            _ => return Err(format!("invalid operation")),
+            _ => {
+                // let errs = toks.error_at_current();
+                // let msg = errs.join("\n");
+                // println!("{}", msg);
+                // return Err(format!("invalid operation\n{}", msg.as_str()));
+                return Err(format!("invalid operation"));
+            }
         },
         _ => return Ok(head),
     };
@@ -72,7 +69,7 @@ fn term(toks: &mut Lexer) -> AstRes {
 
     let mut root = match toks.peek() {
         Op(c) => match c {
-            '^' | '/' | '*' => Ast::new(match toks.next() {
+            '/' | '*' | '^' => Ast::new(match toks.next() {
                 Some(tok) => tok,
                 None => {
                     return Err(format!(
@@ -80,6 +77,37 @@ fn term(toks: &mut Lexer) -> AstRes {
                     ))
                 }
             }),
+            '%' => {
+                let op = match toks.next() {
+                    Some(tok) => tok,
+                    // This should not happen because
+                    // we just peeked a valid token,
+                    // If next ever returns None here
+                    // then the tokenizer is broken
+                    None => return Ok(res),
+                };
+                let percent = match toks.peek() {
+                    // BUG: Grammar error here
+                    //
+                    // "3 / 23% of 55 / 23" will break bc
+                    // it grabes the second '/' wrong.
+                    // This is the result we want "3 / (23% of 55) / 23"
+                    Token::Of => {
+                        toks.next(); // skip the of
+                        let right = match term(toks) {
+                            Ok(ast) => ast,
+                            Err(msg) => return Err(msg),
+                        };
+                        Ok(Ast::from(op, vec![res, right]))
+                    }
+                    Token::OpenParen | Token::CloseParen => {
+                        return Err(format!("invalid token '{:?}'", toks.peek()))
+                    }
+                    Token::Invalid => Err(format!("got invalid token")),
+                    _ => Ok(Ast::from(op, vec![res])),
+                };
+                return percent;
+            }
             '+' | '-' => return Ok(res),
             _ => return Err(format!("invalid operation '{}'", c)),
         },
@@ -146,18 +174,33 @@ mod test {
     use super::parse;
     use super::{expr, factor, term, until_oneof};
     use crate::ast::eval;
-    use crate::lex::{Lexer, Token, Token::{Int}};
+    use crate::lex::{Lexer, Token, Token::Int};
 
     #[test]
-    fn test_modulo() {
+    fn test_parse_keywords() {
         match parse("4 mod 5") {
             Ok(ast) => {
-                println!("{}", ast);
                 assert_eq!(ast.tok, Token::Modulus);
                 assert_eq!(ast.children[0].tok, Int(4));
                 assert_eq!(ast.children[1].tok, Int(5));
                 assert_eq!(eval(&ast), 4.0 % 5.0);
-            },
+            }
+            Err(msg) => panic!(msg),
+        }
+        match parse("12% of 55") {
+            Ok(ast) => {
+                assert_eq!(ast.tok, Token::Op('%'));
+                assert_eq!(ast.children[0].tok, Int(12));
+                assert_eq!(ast.children[1].tok, Int(55));
+                assert_eq!(eval(&ast), (12.0 / 100.) * 55.);
+            }
+            Err(msg) => panic!(msg),
+        }
+        match parse("3 / 23% of 55 * 23") {
+            Ok(ast) => {
+                // println!("{}", ast);
+                assert_eq!(eval(&ast), 3.0 / ((23. / 100.) * 55.) * 23.);
+            }
             Err(msg) => panic!(msg),
         }
     }

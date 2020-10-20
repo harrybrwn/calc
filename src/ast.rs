@@ -13,32 +13,42 @@ pub struct Ast {
 
 #[doc(hidden)]
 pub fn eval(ast: &Ast) -> f64 {
-    if ast.children.len() == 1 {
-        return match ast.tok {
+    match ast.children.len() {
+        // numeric types
+        0 => match ast.tok {
+            Token::Int(n) => n as f64,
+            Token::Float(f) => f,
+            _ => panic!("zero children should be numeric"),
+        },
+        // unary operators
+        1 => match ast.tok {
             Token::Op('-') => -1.0 * eval(&ast.children[0]),
-            _ => panic!("not enough arguments"),
-        };
-    }
-
-    match ast.tok {
-        Token::Op(c) => {
-            let left = ast.children[0].clone();
-            let right = &ast.children[1];
-            match c {
-                '+' => left + right,
-                '-' => left - right,
-                '*' => left * right,
-                '/' => left / right,
-                '^' => {
-                    let base = eval(&ast.children[0]);
-                    base.powf(eval(right))
+            Token::Op('%') => eval(&ast.children[0]) / 100.0,
+            _ => panic!("invalid unary operator"),
+        },
+        // binary operators
+        2 => match ast.tok {
+            Token::Op(c) => {
+                let left = ast.children[0].clone();
+                let right = &ast.children[1];
+                match c {
+                    '+' => left + right,
+                    '-' => left - right,
+                    '*' => left * right,
+                    '/' => left / right,
+                    '^' => {
+                        let base = eval(&ast.children[0]);
+                        return base.powf(eval(right));
+                    }
+                    '%' => (eval(&ast.children[0]) / 100.0) * eval(&ast.children[1]),
+                    _ => panic!("invalid binary operation"),
                 }
-                _ => panic!("invalid operation"),
             }
-        }
-        Token::Modulus => eval(&ast.children[0]) % eval(&ast.children[1]),
-        Token::Int(n) => n as f64,
-        Token::Float(n) => n,
+            Token::Modulus => eval(&ast.children[0]) % eval(&ast.children[1]),
+            _ => panic!("invalid binary operator"),
+        },
+        // ternary operators
+        3 => 0.0,
         _ => 0.0,
     }
 }
@@ -80,7 +90,7 @@ impl Ast {
     }
 
     pub fn push(&mut self, ast: Ast) {
-        if !ast.grouped {
+        if !ast.grouped && self.children.len() > 0 {
             match (self.tok, ast.tok) {
                 (Token::Modulus, Token::Modulus)
                 | (Token::Op('*'), Token::Modulus)
@@ -92,6 +102,14 @@ impl Ast {
                     self.rotate_left();
                     return;
                 }
+                (Token::Op('%'), Token::Op(c)) => match c {
+                    '*' | '/' => {
+                        self.children.push(ast);
+                        self.rotate_left();
+                        return;
+                    }
+                    _ => {}
+                },
                 (Token::Op(l), Token::Op(r)) => match (l, r) {
                     // for any combination of div and mul rotate left
                     ('/', '/') | ('*', '*') | ('/', '*') | ('*', '/') | ('^', '/') | ('^', '*') => {
